@@ -6,14 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml .
-RUN pip install --no-cache-dir -e ".[dev]"
-
 COPY . .
-
-FROM base AS production
-
-RUN pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir "."
 
 EXPOSE 8000
 

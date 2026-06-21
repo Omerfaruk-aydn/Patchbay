@@ -1,6 +1,6 @@
 @import "tailwindcss";
-@import "./styles/tokyo-night-tokens.css";
-@import "./styles/globals.css";
+@import "../styles/tokyo-night-tokens.css";
+@import "../styles/globals.css";
 
 @theme {
   --color-bg-base: var(--bg-base);
