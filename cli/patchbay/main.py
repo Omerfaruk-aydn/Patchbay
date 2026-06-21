@@ -39,7 +39,7 @@ from patchbay.config import (
     get_config, save_config, set_config_value,
     get_api_key, validate_provider, PROVIDER_KEY_MAP,
 )
-from patchbay.providers import stream_completion, StreamAccumulator
+from patchbay.providers import stream_completion, StreamAccumulator, fetch_models, fetch_models_cached
 from patchbay.tools import TOOLS_SPEC, execute_tool
 from patchbay.session import save_session, load_session, list_sessions, delete_session, update_session
 from patchbay.gateway import (
@@ -175,24 +175,33 @@ def handle_slash_command(
     elif cmd == "/model":
         if arg:
             # Check if it's a number (from the list)
-            provider_info = next((p for p in PROVIDERS_INFO if p["id"] == provider), None)
-            if provider_info and arg.isdigit() and 1 <= int(arg) <= len(provider_info["models"]):
-                model = provider_info["models"][int(arg) - 1]
+            api_models = fetch_models_cached(provider)
+            if api_models and arg.isdigit() and 1 <= int(arg) <= len(api_models):
+                model = api_models[int(arg) - 1]["id"]
             else:
                 model = arg.strip()
             set_config_value("model", model)
             console.print(f"[green]Model: {model}[/green]")
         else:
             console.print(f"[yellow]Current model: {model}[/yellow]\n")
-            provider_info = next((p for p in PROVIDERS_INFO if p["id"] == provider), None)
-            if provider_info:
-                console.print(f"[bold]Available models for {provider_info['name']}:[/bold]\n")
-                for i, m in enumerate(provider_info["models"], 1):
-                    marker = " [green](current)[/green]" if m == model else ""
-                    console.print(f"  [cyan]{i:>2}[/cyan]  {m}{marker}")
-                console.print(f"\n  [dim]Usage: /model <name> or /model <number>[/dim]")
+            # Fetch models from API
+            console.print(f"[dim]Fetching models...[/dim]")
+            api_models = fetch_models_cached(provider)
+            if api_models:
+                console.print(f"\n[bold]Models ({len(api_models)} available):[/bold]\n")
+                for i, m in enumerate(api_models, 1):
+                    name = m.get("name", m["id"])
+                    marker = " [green]*(current)[/green]" if m["id"] == model else ""
+                    display = f"{m['id']}  [dim]({name})[/dim]" if name != m["id"] else m["id"]
+                    console.print(f"  [cyan]{i:>3}[/cyan]  {display}{marker}")
             else:
-                console.print("[dim]Usage: /model gpt-4o[/dim]")
+                provider_info = next((p for p in PROVIDERS_INFO if p["id"] == provider), None)
+                if provider_info:
+                    console.print(f"[bold]Models for {provider_info['name']}:[/bold]\n")
+                    for i, m in enumerate(provider_info["models"], 1):
+                        marker = " [green](current)[/green]" if m == model else ""
+                        console.print(f"  [cyan]{i:>2}[/cyan]  {m}{marker}")
+            console.print(f"\n  [dim]Usage: /model <name> or /model <number>[/dim]")
 
     elif cmd == "/provider":
         if arg:
@@ -610,10 +619,23 @@ def _run_setup():
     # Set provider
     set_config_value("provider", selected["id"])
 
-    # Select model
-    console.print(f"\n[bold]Available models for {selected['name']}:[/bold]\n")
-    for i, model in enumerate(selected["models"], 1):
-        console.print(f"  [cyan]{i:>2}[/cyan]  {model}")
+    # Fetch models from API
+    console.print(f"\n[dim]Fetching models from {selected['name']}...[/dim]")
+    api_models = fetch_models_cached(selected["id"])
+
+    if api_models:
+        console.print(f"\n[bold]Available models from {selected['name']}:[/bold]  [dim]({len(api_models)} total)[/dim]\n")
+        for i, model in enumerate(api_models, 1):
+            name = model.get("name", model["id"])
+            if name != model["id"]:
+                console.print(f"  [cyan]{i:>3}[/cyan]  {model['id']}  [dim]({name})[/dim]")
+            else:
+                console.print(f"  [cyan]{i:>3}[/cyan]  {model['id']}")
+    else:
+        # Fallback to hardcoded list
+        console.print(f"\n[bold]Models for {selected['name']}:[/bold]\n")
+        for i, model in enumerate(selected["models"], 1):
+            console.print(f"  [cyan]{i:>2}[/cyan]  {model}")
     console.print(f"       [dim]...or type any model name[/dim]")
 
     console.print()

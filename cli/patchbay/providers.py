@@ -436,3 +436,165 @@ class StreamAccumulator:
             msg["tool_calls"] = self.tool_calls
 
         return msg
+
+
+# ═══════════════════════════════════════════════════════════════
+# MODEL LISTING
+# ═══════════════════════════════════════════════════════════════
+
+def fetch_models(provider: str) -> list[dict]:
+    """Fetch available models from a provider's API.
+
+    Returns list of dicts with 'id', 'name', 'provider' keys.
+    """
+    config = get_config()
+
+    # Try config for API key first (check both cases)
+    api_key = config.get(f"{provider}_api_key") or config.get(f"{provider.upper()}_API_KEY") or ""
+
+    if not api_key:
+        from patchbay.config import PROVIDER_KEY_MAP
+        _, env_key = PROVIDER_KEY_MAP.get(provider, ("", ""))
+        api_key = __import__("os").getenv(env_key, "")
+
+    if not api_key:
+        return []
+
+    try:
+        if provider == "anthropic":
+            return _fetch_models_anthropic(api_key)
+        elif provider == "openrouter":
+            return _fetch_models_openrouter(api_key)
+        elif provider == "google":
+            return _fetch_models_google(api_key)
+        else:
+            return _fetch_models_openai(provider, api_key)
+    except Exception:
+        return []
+
+
+def _fetch_models_openai(provider: str, api_key: str) -> list[dict]:
+    """Fetch models from OpenAI-compatible /models endpoint."""
+    base_url = get_provider_url(provider)
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    with httpx.Client(timeout=15) as client:
+        r = client.get(f"{base_url}/models", headers=headers)
+        r.raise_for_status()
+        data = r.json()
+
+    models = []
+    for m in data.get("data", []):
+        model_id = m.get("id", "")
+        models.append({
+            "id": model_id,
+            "name": model_id,
+            "owned_by": m.get("owned_by", provider),
+        })
+    return models
+
+
+def _fetch_models_openrouter(api_key: str) -> list[dict]:
+    """Fetch all models from OpenRouter API."""
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    with httpx.Client(timeout=15) as client:
+        r = client.get("https://openrouter.ai/api/v1/models", headers=headers)
+        r.raise_for_status()
+        data = r.json()
+
+    models = []
+    for m in data.get("data", []):
+        model_id = m.get("id", "")
+        if not model_id:
+            continue
+        models.append({
+            "id": model_id,
+            "name": m.get("name", model_id),
+            "owned_by": m.get("owned_by", ""),
+            "context_length": m.get("context_length", 0),
+            "pricing": m.get("pricing", {}),
+        })
+    return models
+
+
+def _fetch_models_anthropic(api_key: str) -> list[dict]:
+    """Fetch Anthropic models."""
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    }
+
+    # Anthropic doesn't have a /models endpoint, so we list known models
+    known = [
+        {"id": "claude-opus-4-20250514", "name": "Claude 4 Opus", "context": 200000},
+        {"id": "claude-sonnet-4-20250514", "name": "Claude 4 Sonnet", "context": 200000},
+        {"id": "claude-3-5-sonnet-20241022", "name": "Claude 3.5 Sonnet", "context": 200000},
+        {"id": "claude-3-5-haiku-20241022", "name": "Claude 3.5 Haiku", "context": 200000},
+        {"id": "claude-3-opus-20240229", "name": "Claude 3 Opus", "context": 200000},
+    ]
+    return [{"id": m["id"], "name": f"{m['name']} ({m['context']//1000}k)", "owned_by": "anthropic"} for m in known]
+
+
+def _fetch_models_google(api_key: str) -> list[dict]:
+    """Fetch Google Gemini models."""
+    with httpx.Client(timeout=15) as client:
+        r = client.get(
+            f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        )
+        r.raise_for_status()
+        data = r.json()
+
+    models = []
+    for m in data.get("models", []):
+        name = m.get("name", "")
+        if "generateContent" in m.get("supportedGenerationMethods", []):
+            model_id = name.replace("models/", "")
+            models.append({
+                "id": model_id,
+                "name": m.get("displayName", model_id),
+                "owned_by": "google",
+            })
+    return models
+
+
+def fetch_models_cached(provider: str, cache_ttl: int = 3600) -> list[dict]:
+    """Fetch models with simple file-based caching.
+
+    Args:
+        provider: Provider name
+        cache_ttl: Cache time-to-live in seconds (default 1 hour)
+
+    Returns:
+        List of model dicts
+    """
+    import time
+    from pathlib import Path
+
+    cache_dir = Path.home() / ".patchbay" / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"models_{provider}.json"
+
+    # Check cache
+    if cache_file.exists():
+        try:
+            cache_data = json.loads(cache_file.read_text(encoding="utf-8"))
+            if time.time() - cache_data.get("timestamp", 0) < cache_ttl:
+                return cache_data.get("models", [])
+        except Exception:
+            pass
+
+    # Fetch fresh
+    models = fetch_models(provider)
+
+    # Save cache
+    if models:
+        try:
+            cache_file.write_text(json.dumps({
+                "timestamp": time.time(),
+                "models": models,
+            }, indent=2, ensure_ascii=False), encoding="utf-8")
+        except Exception:
+            pass
+
+    return models
