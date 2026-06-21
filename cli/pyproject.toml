@@ -1,0 +1,18 @@
+[project]
+name = "patchbay-cli"
+version = "0.1.0"
+description = "Patchbay CLI — Universal LLM Gateway Control Plane"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+patchbay = "patchbay_cli.main:cli"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
