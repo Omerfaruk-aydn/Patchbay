@@ -28,7 +28,8 @@ class GuardrailCheck(ABC):
 class GuardrailPipeline:
     """Input/output guardrail pipeline."""
 
-    stages: list[GuardrailCheck] = []
+    def __init__(self, stages: list[GuardrailCheck] | None = None) -> None:
+        self.stages = stages or []
 
     async def run_input_checks(
         self, text: str, enabled_rules: list[str] | None = None

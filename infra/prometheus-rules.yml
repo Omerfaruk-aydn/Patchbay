@@ -1,0 +1,26 @@
+groups:
+  - name: patchbay_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(patchbay_requests_total{status="error"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(patchbay_request_latency_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High P95 latency detected"
+
+      - alert: CircuitBreakerOpen
+        expr: patchbay_circuit_breaker_state == 1
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker is open for a route"

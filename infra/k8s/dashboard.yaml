@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: patchbay-dashboard
+  namespace: patchbay
+  labels:
+    app: patchbay-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: patchbay-dashboard
+  template:
+    metadata:
+      labels:
+        app: patchbay-dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: patchbay-dashboard:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: "http://patchbay-gateway:8000"
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: patchbay-dashboard
+  namespace: patchbay
+spec:
+  selector:
+    app: patchbay-dashboard
+  ports:
+    - port: 3000
+      targetPort: 3000
+  type: ClusterIP

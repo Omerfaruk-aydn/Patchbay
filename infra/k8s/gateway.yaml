@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: patchbay-gateway
+  namespace: patchbay
+  labels:
+    app: patchbay-gateway
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: patchbay-gateway
+  template:
+    metadata:
+      labels:
+        app: patchbay-gateway
+    spec:
+      containers:
+        - name: gateway
+          image: patchbay-gateway:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: patchbay-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: patchbay-secrets
+                  key: redis-url
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: patchbay-secrets
+                  key: jwt-secret
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: patchbay-gateway
+  namespace: patchbay
+spec:
+  selector:
+    app: patchbay-gateway
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP
