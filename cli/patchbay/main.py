@@ -482,7 +482,149 @@ def cli(ctx, provider, model):
         cfg = get_config()
         p = provider or cfg.get("provider", "openai")
         m = model or cfg.get("model", "gpt-4o")
+
+        # Auto-detect: if no API key for provider, show setup
+        if not validate_provider(p):
+            console.print(f"[yellow]No API key configured for {p}.[/yellow]\n")
+            _run_setup()
+            console.print()
+            cfg = get_config()
+            p = cfg.get("provider", p)
+            m = cfg.get("model", m)
+
         run_repl(p, m)
+
+
+# ─── Setup Wizard ───
+
+PROVIDERS_INFO = [
+    {"id": "openrouter", "name": "OpenRouter", "desc": "100+ models (GPT, Claude, Gemini, Llama, etc.)", "key_url": "https://openrouter.ai/keys", "key_name": "OPENROUTER_API_KEY", "models": ["openai/gpt-4o", "anthropic/claude-sonnet-4", "meta-llama/llama-4-maverick", "deepseek/deepseek-chat", "google/gemini-2.5-flash"]},
+    {"id": "openai", "name": "OpenAI", "desc": "GPT-4o, GPT-4o-mini, GPT-3.5", "key_url": "https://platform.openai.com/api-keys", "key_name": "OPENAI_API_KEY", "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3-mini"]},
+    {"id": "anthropic", "name": "Anthropic", "desc": "Claude 4, Claude 3.5 Sonnet", "key_url": "https://console.anthropic.com/keys", "key_name": "ANTHROPIC_API_KEY", "models": ["claude-sonnet-4-20250514", "claude-3-5-haiku-20241022", "claude-opus-4-20250514"]},
+    {"id": "deepseek", "name": "DeepSeek", "desc": "DeepSeek Chat & Coder (cheap)", "key_url": "https://platform.deepseek.com/api_keys", "key_name": "DEEPSEEK_API_KEY", "models": ["deepseek-chat", "deepseek-coder"]},
+    {"id": "google", "name": "Google Gemini", "desc": "Gemini 2.5 Pro & Flash", "key_url": "https://aistudio.google.com/apikey", "key_name": "GOOGLE_API_KEY", "models": ["gemini-2.5-flash", "gemini-2.5-pro"]},
+]
+
+
+def _run_setup():
+    """Interactive setup wizard for API key and provider selection."""
+    from patchbay.config import set_config_value, get_config
+
+    console.print(Panel(
+        "[bold cyan]Patchbay Setup Wizard[/bold cyan]\n\n"
+        "Choose a provider and enter your API key.\n"
+        "You can change these later with [white]/config[/white] or [white]/model[/white].",
+        title="[bold]Setup[/bold]",
+        border_style="cyan",
+    ))
+
+    # Show providers
+    console.print("\n[bold]Available providers:[/bold]\n")
+    for i, p in enumerate(PROVIDERS_INFO, 1):
+        key_status = "[green]+[/green]" if _has_key(p["key_name"]) else "[dim]-[/dim]"
+        console.print(f"  [cyan]{i}[/cyan]  {key_status} {p['name']}  [dim]— {p['desc']}[/dim]")
+
+    console.print()
+
+    # Select provider
+    while True:
+        try:
+            choice = console.input("  [cyan]Pick a provider (1-5) [/cyan]").strip()
+        except (EOFError, KeyboardInterrupt):
+            return
+
+        if choice.isdigit() and 1 <= int(choice) <= len(PROVIDERS_INFO):
+            selected = PROVIDERS_INFO[int(choice) - 1]
+            break
+        else:
+            console.print("  [red]Invalid choice. Enter 1-5.[/red]")
+
+    console.print(f"\n  [green]Selected: {selected['name']}[/green]")
+
+    # Get API key
+    if _has_key(selected["key_name"]):
+        console.print(f"  [dim]API key already configured.[/dim]")
+    else:
+        console.print(f"\n  [dim]Get your key at: {selected['key_url']}[/dim]\n")
+        while True:
+            try:
+                api_key = console.input("  [cyan]Paste your API key [/cyan]").strip()
+            except (EOFError, KeyboardInterrupt):
+                return
+
+            if not api_key:
+                console.print("  [red]API key cannot be empty.[/red]")
+                continue
+            if len(api_key) < 10:
+                console.print("  [red]API key looks too short. Try again.[/red]")
+                continue
+            break
+
+        set_config_value(selected["key_name"], api_key)
+        console.print(f"\n  [green]API key saved for {selected['name']}![/green]")
+
+    # Set provider
+    set_config_value("provider", selected["id"])
+
+    # Select model
+    console.print(f"\n[bold]Available models for {selected['name']}:[/bold]\n")
+    for i, model in enumerate(selected["models"], 1):
+        console.print(f"  [cyan]{i}[/cyan]  {model}")
+
+    console.print()
+    while True:
+        try:
+            choice = console.input(f"  [cyan]Pick a model (1-{len(selected['models'])}) [/cyan]").strip()
+        except (EOFError, KeyboardInterrupt):
+            return
+
+        if choice.isdigit() and 1 <= int(choice) <= len(selected["models"]):
+            chosen_model = selected["models"][int(choice) - 1]
+            break
+        else:
+            console.print(f"  [red]Invalid choice. Enter 1-{len(selected['models'])}.[/red]")
+
+    set_config_value("model", chosen_model)
+    console.print(f"\n  [green]Model set to: {chosen_model}[/green]")
+
+    # Gateway URL
+    cfg = get_config()
+    gw_url = cfg.get("gateway_url", "http://localhost:8000")
+    console.print(f"\n  [dim]Gateway URL: {gw_url}[/dim]")
+    try:
+        change_gw = console.input("  [cyan]Change gateway URL? (n): [/cyan]").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        change_gw = "n"
+
+    if change_gw in ("y", "yes"):
+        try:
+            new_url = console.input("  [cyan]Gateway URL [/cyan]").strip()
+        except (EOFError, KeyboardInterrupt):
+            new_url = ""
+        if new_url:
+            set_config_value("gateway_url", new_url)
+            console.print(f"  [green]Gateway URL updated.[/green]")
+
+    console.print(f"\n[bold green]Setup complete![/bold green] Starting Patchbay AI...\n")
+
+
+def _has_key(env_key: str) -> bool:
+    """Check if API key is available in config or env."""
+    import os
+    config = get_config()
+    cfg_key = env_key.lower()
+    return bool(config.get(cfg_key) or os.getenv(env_key))
+
+
+# ─── Setup command ───
+
+@cli.command()
+def setup():
+    """Interactive setup wizard - configure provider and API key."""
+    _run_setup()
+    # After setup, start REPL
+    cfg = get_config()
+    run_repl(cfg.get("provider", "openai"), cfg.get("model", "gpt-4o"))
 
 
 # ─── Status ───
