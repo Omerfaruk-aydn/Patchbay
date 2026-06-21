@@ -1,23 +1,54 @@
 @import "tailwindcss";
-@import "../styles/tokyo-night-tokens.css";
-@import "../styles/globals.css";
 
-@theme {
-  --color-bg-base: var(--bg-base);
-  --color-bg-elevated-1: var(--bg-elevated-1);
-  --color-bg-elevated-2: var(--bg-elevated-2);
-  --color-bg-elevated-3: var(--bg-elevated-3);
-  --color-border-subtle: var(--border-subtle);
-  --color-border-strong: var(--border-strong);
-  --color-text-primary: var(--text-primary);
-  --color-text-secondary: var(--text-secondary);
-  --color-text-muted: var(--text-muted);
-  --color-accent-blue: var(--accent-blue);
-  --color-accent-cyan: var(--accent-cyan);
-  --color-accent-green: var(--accent-green);
-  --color-accent-yellow: var(--accent-yellow);
-  --color-accent-orange: var(--accent-orange);
-  --color-accent-red: var(--accent-red);
-  --color-accent-magenta: var(--accent-magenta);
-  --color-accent-teal: var(--accent-teal);
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  background-color: #1a1b26;
+  color: #c0caf5;
+  min-height: 100vh;
+}
+
+.mono {
+  font-family: "JetBrains Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.glass {
+  background: rgba(36, 40, 59, 0.65);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(122, 162, 247, 0.12);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1a1b26;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #3b4261;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #565f89;
+}
+
+::selection {
+  background: rgba(122, 162, 247, 0.3);
+  color: #c0caf5;
 }

@@ -22,19 +22,19 @@ export function Sidebar() {
     <aside
       className="flex h-screen w-64 flex-col border-r"
       style={{
-        backgroundColor: "var(--bg-elevated-1)",
-        borderColor: "var(--border-subtle)",
+        backgroundColor: "#1f2335",
+        borderColor: "#2f3549",
       }}
     >
-      <div className="flex h-16 items-center border-b px-6" style={{ borderColor: "var(--border-subtle)" }}>
+      <div className="flex h-16 items-center border-b px-6" style={{ borderColor: "#2f3549" }}>
         <Link href="/" className="flex items-center gap-2">
           <div
             className="flex h-8 w-8 items-center justify-center rounded-md text-sm font-bold"
-            style={{ backgroundColor: "var(--accent-blue)", color: "var(--bg-base)" }}
+            style={{ backgroundColor: "#7aa2f7", color: "#1a1b26" }}
           >
             P
           </div>
-          <span className="text-lg font-semibold" style={{ color: "var(--text-primary)" }}>
+          <span className="text-lg font-semibold" style={{ color: "#c0caf5" }}>
             Patchbay
           </span>
         </Link>
@@ -48,13 +48,11 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-bg-elevated-3"
-                  : "hover:bg-bg-elevated-2"
+                "flex items-center rounded-md px-3 py-2 text-sm font-medium transition-colors"
               )}
               style={{
-                color: isActive ? "var(--text-primary)" : "var(--text-secondary)",
+                color: isActive ? "#c0caf5" : "#9aa5ce",
+                backgroundColor: isActive ? "#2a2e42" : "transparent",
               }}
             >
               {item.label}
@@ -63,8 +61,8 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t p-4" style={{ borderColor: "var(--border-subtle)" }}>
-        <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+      <div className="border-t p-4" style={{ borderColor: "#2f3549" }}>
+        <p className="text-xs" style={{ color: "#565f89" }}>
           Patchbay v0.1.0
         </p>
       </div>

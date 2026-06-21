@@ -10,10 +10,13 @@ function Card({
     <div
       className={cn(
         "rounded-lg border p-6",
-        "bg-bg-elevated-1 border-border-subtle",
         className
       )}
-      style={{ boxShadow: "var(--shadow-sm)" }}
+      style={{
+        backgroundColor: "#1f2335",
+        borderColor: "#2f3549",
+        boxShadow: "0 2px 8px rgba(26, 27, 38, 0.4)",
+      }}
       {...props}
     />
   );
@@ -38,7 +41,7 @@ function CardTitle({
   return (
     <h3
       className={cn("text-lg font-semibold leading-none tracking-tight", className)}
-      style={{ color: "var(--text-primary)" }}
+      style={{ color: "#c0caf5" }}
       {...props}
     />
   );
@@ -51,7 +54,7 @@ function CardDescription({
   return (
     <p
       className={cn("text-sm", className)}
-      style={{ color: "var(--text-secondary)" }}
+      style={{ color: "#9aa5ce" }}
       {...props}
     />
   );

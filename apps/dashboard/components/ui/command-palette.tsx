@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 interface Command {
   id: string;
@@ -25,7 +24,6 @@ const commands: Command[] = [
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const router = useRouter();
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -49,13 +47,14 @@ export function CommandPalette() {
     <div
       className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"
       onClick={() => setOpen(false)}
+      style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
     >
       <div
         className="w-full max-w-lg rounded-lg border p-2"
         style={{
-          backgroundColor: "var(--bg-elevated-2)",
-          borderColor: "var(--border-strong)",
-          boxShadow: "var(--shadow-glow-blue)",
+          backgroundColor: "#24283b",
+          borderColor: "#3b4261",
+          boxShadow: "0 0 24px rgba(122, 162, 247, 0.25)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -65,14 +64,14 @@ export function CommandPalette() {
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Type a command..."
           className="w-full border-none bg-transparent p-3 text-sm outline-none"
-          style={{ color: "var(--text-primary)" }}
+          style={{ color: "#c0caf5" }}
         />
         <div className="max-h-64 overflow-y-auto">
           {filtered.map((cmd) => (
             <button
               key={cmd.id}
-              className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm hover:bg-bg-elevated-3"
-              style={{ color: "var(--text-secondary)" }}
+              className="flex w-full items-center justify-between rounded-md px-3 py-2 text-sm"
+              style={{ color: "#9aa5ce" }}
               onClick={() => {
                 setOpen(false);
               }}
@@ -81,7 +80,7 @@ export function CommandPalette() {
               {cmd.shortcut && (
                 <kbd
                   className="text-xs"
-                  style={{ color: "var(--text-muted)" }}
+                  style={{ color: "#565f89" }}
                 >
                   {cmd.shortcut}
                 </kbd>
