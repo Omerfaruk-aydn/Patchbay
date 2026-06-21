@@ -1,2 +1,2 @@
-"""Patchbay CLI - Universal LLM Gateway CLI & AI Coding Assistant."""
-__version__ = "0.1.0"
+"""Patchbay CLI - Universal LLM Gateway & AI Coding Assistant."""
+__version__ = "0.2.0"
