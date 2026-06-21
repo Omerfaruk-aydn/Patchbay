@@ -1,0 +1,23 @@
+@import "tailwindcss";
+@import "./styles/tokyo-night-tokens.css";
+@import "./styles/globals.css";
+
+@theme {
+  --color-bg-base: var(--bg-base);
+  --color-bg-elevated-1: var(--bg-elevated-1);
+  --color-bg-elevated-2: var(--bg-elevated-2);
+  --color-bg-elevated-3: var(--bg-elevated-3);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent-blue: var(--accent-blue);
+  --color-accent-cyan: var(--accent-cyan);
+  --color-accent-green: var(--accent-green);
+  --color-accent-yellow: var(--accent-yellow);
+  --color-accent-orange: var(--accent-orange);
+  --color-accent-red: var(--accent-red);
+  --color-accent-magenta: var(--accent-magenta);
+  --color-accent-teal: var(--accent-teal);
+}

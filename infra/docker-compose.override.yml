@@ -1,0 +1,9 @@
+services:
+  postgres:
+    ports: []
+  redis:
+    ports: []
+  gateway:
+    ports: ["8000:8000"]
+  dashboard:
+    ports: ["3000:3000"]
