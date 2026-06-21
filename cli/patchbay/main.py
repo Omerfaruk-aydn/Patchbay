@@ -174,19 +174,44 @@ def handle_slash_command(
 
     elif cmd == "/model":
         if arg:
-            model = arg.strip()
+            # Check if it's a number (from the list)
+            provider_info = next((p for p in PROVIDERS_INFO if p["id"] == provider), None)
+            if provider_info and arg.isdigit() and 1 <= int(arg) <= len(provider_info["models"]):
+                model = provider_info["models"][int(arg) - 1]
+            else:
+                model = arg.strip()
+            set_config_value("model", model)
             console.print(f"[green]Model: {model}[/green]")
         else:
-            console.print(f"[yellow]Current model: {model}[/yellow]")
-            console.print("[dim]Usage: /model gpt-4o[/dim]")
+            console.print(f"[yellow]Current model: {model}[/yellow]\n")
+            provider_info = next((p for p in PROVIDERS_INFO if p["id"] == provider), None)
+            if provider_info:
+                console.print(f"[bold]Available models for {provider_info['name']}:[/bold]\n")
+                for i, m in enumerate(provider_info["models"], 1):
+                    marker = " [green](current)[/green]" if m == model else ""
+                    console.print(f"  [cyan]{i:>2}[/cyan]  {m}{marker}")
+                console.print(f"\n  [dim]Usage: /model <name> or /model <number>[/dim]")
+            else:
+                console.print("[dim]Usage: /model gpt-4o[/dim]")
 
     elif cmd == "/provider":
         if arg:
             provider = arg.strip().lower()
+            set_config_value("provider", provider)
             console.print(f"[green]Provider: {provider}[/green]")
+            # Show available models for the new provider
+            provider_info = next((p for p in PROVIDERS_INFO if p["id"] == provider), None)
+            if provider_info:
+                console.print(f"\n[bold]Models for {provider_info['name']}:[/bold]")
+                for i, m in enumerate(provider_info["models"], 1):
+                    console.print(f"  [cyan]{i:>2}[/cyan]  {m}")
+                console.print(f"\n  [dim]Type /model <name> or /model <number> to switch[/dim]")
         else:
-            console.print(f"[yellow]Current provider: {provider}[/yellow]")
-            console.print("[dim]Options: openai, anthropic, deepseek, openrouter, google, patchbay[/dim]")
+            console.print(f"[yellow]Current provider: {provider}[/yellow]\n")
+            for p in PROVIDERS_INFO:
+                marker = " [green]*(current)[/green]" if p["id"] == provider else ""
+                console.print(f"  {p['id']:12s}  {p['desc']}{marker}")
+            console.print("\n  [dim]Usage: /provider openrouter[/dim]")
 
     elif cmd == "/history":
         if not messages or all(m["role"] == "system" for m in messages):
@@ -498,11 +523,30 @@ def cli(ctx, provider, model):
 # ─── Setup Wizard ───
 
 PROVIDERS_INFO = [
-    {"id": "openrouter", "name": "OpenRouter", "desc": "100+ models (GPT, Claude, Gemini, Llama, etc.)", "key_url": "https://openrouter.ai/keys", "key_name": "OPENROUTER_API_KEY", "models": ["openai/gpt-4o", "anthropic/claude-sonnet-4", "meta-llama/llama-4-maverick", "deepseek/deepseek-chat", "google/gemini-2.5-flash"]},
-    {"id": "openai", "name": "OpenAI", "desc": "GPT-4o, GPT-4o-mini, GPT-3.5", "key_url": "https://platform.openai.com/api-keys", "key_name": "OPENAI_API_KEY", "models": ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "o3-mini"]},
-    {"id": "anthropic", "name": "Anthropic", "desc": "Claude 4, Claude 3.5 Sonnet", "key_url": "https://console.anthropic.com/keys", "key_name": "ANTHROPIC_API_KEY", "models": ["claude-sonnet-4-20250514", "claude-3-5-haiku-20241022", "claude-opus-4-20250514"]},
-    {"id": "deepseek", "name": "DeepSeek", "desc": "DeepSeek Chat & Coder (cheap)", "key_url": "https://platform.deepseek.com/api_keys", "key_name": "DEEPSEEK_API_KEY", "models": ["deepseek-chat", "deepseek-coder"]},
-    {"id": "google", "name": "Google Gemini", "desc": "Gemini 2.5 Pro & Flash", "key_url": "https://aistudio.google.com/apikey", "key_name": "GOOGLE_API_KEY", "models": ["gemini-2.5-flash", "gemini-2.5-pro"]},
+    {"id": "openrouter", "name": "OpenRouter", "desc": "100+ models (GPT, Claude, Gemini, Llama, Mistral...)", "key_url": "https://openrouter.ai/keys", "key_name": "OPENROUTER_API_KEY", "models": [
+        "openai/gpt-4o", "openai/gpt-4o-mini", "openai/gpt-4-turbo", "openai/o3-mini", "openai/o4-mini",
+        "anthropic/claude-sonnet-4", "anthropic/claude-3.5-sonnet", "anthropic/claude-3.5-haiku", "anthropic/claude-3-opus",
+        "google/gemini-2.5-flash", "google/gemini-2.5-pro", "google/gemini-2.0-flash",
+        "meta-llama/llama-4-maverick", "meta-llama/llama-4-scout", "meta-llama/llama-3.3-70b",
+        "deepseek/deepseek-chat", "deepseek/deepseek-r1",
+        "mistralai/mistral-large", "mistralai/mistral-small",
+        "qwen/qwen-2.5-72b", "qwen/qwen3-235b-a22b",
+    ]},
+    {"id": "openai", "name": "OpenAI", "desc": "GPT-4o, GPT-4o-mini, o3, o4-mini", "key_url": "https://platform.openai.com/api-keys", "key_name": "OPENAI_API_KEY", "models": [
+        "gpt-4o", "gpt-4o-mini", "gpt-4-turbo",
+        "o3-mini", "o4-mini", "o3", "o4-pro",
+    ]},
+    {"id": "anthropic", "name": "Anthropic", "desc": "Claude 4 Opus, Sonnet, Haiku", "key_url": "https://console.anthropic.com/keys", "key_name": "ANTHROPIC_API_KEY", "models": [
+        "claude-opus-4-20250514", "claude-sonnet-4-20250514",
+        "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022",
+    ]},
+    {"id": "deepseek", "name": "DeepSeek", "desc": "DeepSeek Chat & R1 (very cheap)", "key_url": "https://platform.deepseek.com/api_keys", "key_name": "DEEPSEEK_API_KEY", "models": [
+        "deepseek-chat", "deepseek-reasoner",
+    ]},
+    {"id": "google", "name": "Google Gemini", "desc": "Gemini 2.5 Pro & Flash", "key_url": "https://aistudio.google.com/apikey", "key_name": "GOOGLE_API_KEY", "models": [
+        "gemini-2.5-flash", "gemini-2.5-pro",
+        "gemini-2.0-flash", "gemini-1.5-pro",
+    ]},
 ]
 
 
@@ -569,20 +613,26 @@ def _run_setup():
     # Select model
     console.print(f"\n[bold]Available models for {selected['name']}:[/bold]\n")
     for i, model in enumerate(selected["models"], 1):
-        console.print(f"  [cyan]{i}[/cyan]  {model}")
+        console.print(f"  [cyan]{i:>2}[/cyan]  {model}")
+    console.print(f"       [dim]...or type any model name[/dim]")
 
     console.print()
     while True:
         try:
-            choice = console.input(f"  [cyan]Pick a model (1-{len(selected['models'])}) [/cyan]").strip()
+            choice = console.input(f"  [cyan]Pick a model (1-{len(selected['models'])} or type name) [/cyan]").strip()
         except (EOFError, KeyboardInterrupt):
             return
+
+        if not choice:
+            continue
 
         if choice.isdigit() and 1 <= int(choice) <= len(selected["models"]):
             chosen_model = selected["models"][int(choice) - 1]
             break
         else:
-            console.print(f"  [red]Invalid choice. Enter 1-{len(selected['models'])}.[/red]")
+            # Custom model name typed
+            chosen_model = choice
+            break
 
     set_config_value("model", chosen_model)
     console.print(f"\n  [green]Model set to: {chosen_model}[/green]")
