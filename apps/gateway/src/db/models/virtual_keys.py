@@ -1,3 +1,11 @@
+"""Virtual key model — API authentication and budget tracking.
+
+Keys follow the GitHub PAT pattern:
+  - Raw key shown to user ONCE (pk_live_...)
+  - Only bcrypt hash stored in database
+  - Keys carry scopes, rate limits, and budget caps
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -11,6 +19,8 @@ from patchbay_gateway.db.base import Base
 
 
 class VirtualKey(Base):
+    """Virtual API key for authentication and budget tracking."""
+
     __tablename__ = "virtual_keys"
 
     id: Mapped[uuid.UUID] = mapped_column(

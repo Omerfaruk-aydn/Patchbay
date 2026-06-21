@@ -1,3 +1,10 @@
+"""Organization model — top-level entity for multi-tenant isolation.
+
+Organizations own projects, which own virtual keys, which own request logs.
+This hierarchy enables both single-user self-hosted deployments and
+multi-customer SaaS deployments using the same data model.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -11,6 +18,8 @@ from patchbay_gateway.db.base import Base
 
 
 class Organization(Base):
+    """Top-level tenant entity."""
+
     __tablename__ = "organizations"
 
     id: Mapped[uuid.UUID] = mapped_column(

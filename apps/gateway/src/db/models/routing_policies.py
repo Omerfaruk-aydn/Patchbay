@@ -1,3 +1,12 @@
+"""Routing policy model — user-defined routing strategies per project.
+
+Policies define how the routing engine selects provider routes:
+  - cost_optimized: Lowest effective cost
+  - latency_optimized: Lowest p95 latency
+  - semantic: Task-category-based model selection
+  - fallback_chain: Manual route ordering
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -11,6 +20,8 @@ from patchbay_gateway.db.base import Base
 
 
 class RoutingPolicy(Base):
+    """Routing policy for a project."""
+
     __tablename__ = "routing_policies"
 
     id: Mapped[uuid.UUID] = mapped_column(

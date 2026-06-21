@@ -1,6 +1,18 @@
+"""Azure OpenAI provider adapter — enterprise OpenAI access via Azure.
+
+Supports:
+  - Azure OpenAI Service (GPT-4o, GPT-4o-mini)
+  - API key and Entra ID (OAuth2) authentication
+  - API version management
+  - Deployment-based model routing
+"""
+
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import time
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -11,51 +23,184 @@ from patchbay_gateway.providers.schemas import (
     NormalizedRequest,
     NormalizedResponse,
     NormalizedStreamChunk,
+    ToolCall,
 )
 from patchbay_gateway.providers.registry import ProviderRegistry
+
+logger = logging.getLogger(__name__)
+
+_MAX_RETRIES = 3
+_RETRY_DELAY_BASE = 1.0
+_RETRYABLE_STATUS_CODES = {429, 500, 502, 503}
 
 
 @ProviderRegistry.register
 class AzureOpenAIAdapter(ProviderAdapter):
-    provider_key = "azure_openai"
+    """Azure OpenAI adapter.
 
-    def normalize_request(self, req: dict) -> NormalizedRequest:
+    Azure OpenAI uses deployment-based endpoints instead of model names.
+    The auth_credential_ref stores the API key, and the endpoint URL
+    is derived from the provider_model_id (deployment name).
+    """
+
+    provider_key = "azure_openai"
+    _api_version = "2024-08-01-preview"
+
+    def normalize_request(self, req: dict[str, Any]) -> NormalizedRequest:
+        messages = req.get("messages", [])
+        system_msg = None
+        non_system = []
+        for m in messages:
+            if m.get("role") == "system" and system_msg is None:
+                system_msg = m.get("content", "")
+            else:
+                non_system.append(m)
+
         return NormalizedRequest(
-            messages=req.get("messages", []),
+            messages=non_system,
+            system=system_msg,
             max_tokens=req.get("max_tokens", 4096),
             temperature=req.get("temperature"),
-            tools=req.get("tools"),
+            tools=self._normalize_tools(req.get("tools")),
             stream=req.get("stream", False),
         )
 
-    def normalize_response(self, response: dict) -> NormalizedResponse:
-        choice = response.get("choices", [{}])[0]
+    def _normalize_tools(self, tools: list[dict] | None) -> list[dict] | None:
+        if not tools:
+            return None
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.get("function", t).get("name", ""),
+                    "description": t.get("function", t).get("description", ""),
+                    "parameters": t.get("function", t).get("parameters", {}),
+                },
+            }
+            for t in tools
+        ]
+
+    def normalize_response(self, response: dict[str, Any]) -> NormalizedResponse:
+        choices = response.get("choices", [])
+        if not choices:
+            return NormalizedResponse(finish_reason="error")
+
+        choice = choices[0]
         message = choice.get("message", {})
+        tool_calls = []
+        for tc in message.get("tool_calls", []):
+            func = tc.get("function", {})
+            args = func.get("arguments", "{}")
+            try:
+                parsed = json.loads(args) if isinstance(args, str) else args
+            except (json.JSONDecodeError, TypeError):
+                parsed = {}
+            tool_calls.append(ToolCall(id=tc.get("id", ""), name=func.get("name", ""), arguments=parsed))
+
         usage = response.get("usage", {})
         return NormalizedResponse(
-            text=message.get("content", ""),
+            text=message.get("content") or "",
+            tool_calls=tool_calls,
             input_tokens=usage.get("prompt_tokens", 0),
             output_tokens=usage.get("completion_tokens", 0),
             finish_reason=choice.get("finish_reason"),
         )
 
     async def send(self, route: Any, request: NormalizedRequest) -> NormalizedResponse:
-        endpoint = route.auth_credential_ref  # stored as endpoint URL
-        client = httpx.AsyncClient(
-            base_url=endpoint,
+        endpoint = route.auth_credential_ref
+        deployment = route.provider_model_id
+        url = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={self._api_version}"
+
+        payload = self._build_payload(request)
+        data = await self._request_with_retry(
+            "POST", url, json=payload,
             headers={"api-key": route.auth_credential_ref},
-            timeout=60.0,
         )
-        payload: dict[str, Any] = {"model": route.provider_model_id, "messages": request.messages, "max_tokens": request.max_tokens}
-        response = await client.post("/openai/deployments/{route.provider_model_id}/chat/completions?api-version=2024-02-01", json=payload)
-        response.raise_for_status()
-        return self.normalize_response(response.json())
+        return self.normalize_response(data)
 
     async def stream(self, route: Any, request: NormalizedRequest) -> AsyncIterator[NormalizedStreamChunk]:
-        yield NormalizedStreamChunk(text_delta="")
+        endpoint = route.auth_credential_ref
+        deployment = route.provider_model_id
+        url = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={self._api_version}&stream=true"
+
+        payload = self._build_payload(request)
+        payload["stream"] = True
+
+        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+            async with client.stream(
+                "POST", url, json=payload,
+                headers={"api-key": route.auth_credential_ref},
+            ) as response:
+                if response.status_code != 200:
+                    body = await response.aread()
+                    raise Exception(f"Stream error {response.status_code}: {body.decode()[:200]}")
+
+                async for line in response.aiter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data_str = line[6:].strip()
+                    if data_str == "[DONE]":
+                        yield NormalizedStreamChunk(finish_reason="stop")
+                        return
+                    try:
+                        chunk = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+                    choices = chunk.get("choices", [])
+                    if choices:
+                        delta = choices[0].get("delta", {})
+                        content = delta.get("content")
+                        if content:
+                            yield NormalizedStreamChunk(text_delta=content)
+                        finish = choices[0].get("finish_reason")
+                        if finish:
+                            yield NormalizedStreamChunk(finish_reason=finish)
 
     async def health_check(self, route: Any) -> bool:
-        return True
+        try:
+            endpoint = route.auth_credential_ref
+            async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+                resp = await client.get(
+                    f"{endpoint}/openai/models?api-version={self._api_version}",
+                    headers={"api-key": route.auth_credential_ref},
+                )
+                return resp.status_code == 200
+        except Exception:
+            return False
 
     def count_tokens(self, text: str, model: str) -> int:
-        return len(text) // 4
+        return max(len(text) // 4, 1)
+
+    def _build_payload(self, request: NormalizedRequest) -> dict[str, Any]:
+        messages: list[dict[str, Any]] = []
+        if request.system:
+            messages.append({"role": "system", "content": request.system})
+        messages.extend(request.messages)
+        payload: dict[str, Any] = {"messages": messages, "max_tokens": request.max_tokens}
+        if request.temperature is not None:
+            payload["temperature"] = request.temperature
+        if request.tools:
+            payload["tools"] = request.tools
+        return payload
+
+    async def _request_with_retry(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+        last_error: Exception | None = None
+        for attempt in range(_MAX_RETRIES):
+            try:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=10.0)) as client:
+                    response = await client.request(method, url, **kwargs)
+                    if response.status_code in _RETRYABLE_STATUS_CODES:
+                        retry_after = float(response.headers.get("retry-after", _RETRY_DELAY_BASE * (2 ** attempt)))
+                        await asyncio.sleep(retry_after)
+                        continue
+                    response.raise_for_status()
+                    return response.json()
+            except httpx.TimeoutException as e:
+                last_error = e
+                await asyncio.sleep(_RETRY_DELAY_BASE * (2 ** attempt))
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code not in _RETRYABLE_STATUS_CODES:
+                    raise
+                last_error = e
+                await asyncio.sleep(_RETRY_DELAY_BASE * (2 ** attempt))
+        raise last_error or Exception("Max retries exceeded")

@@ -1,3 +1,15 @@
+"""Request log model — complete audit trail of every API request.
+
+Stores:
+  - Which model was requested vs. which route was used
+  - Token usage and actual cost
+  - Latency metrics
+  - Fallback chain (if fallback was triggered)
+  - Cache hit status
+  - Error information
+  - OpenTelemetry trace ID (for cross-system correlation)
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -12,6 +24,8 @@ from patchbay_gateway.db.base import Base
 
 
 class Request(Base):
+    """Request log entry."""
+
     __tablename__ = "requests"
 
     id: Mapped[uuid.UUID] = mapped_column(

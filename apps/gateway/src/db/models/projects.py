@@ -1,9 +1,15 @@
+"""Project model — logical grouping within an organization.
+
+Projects group virtual keys, routing policies, and MCP servers.
+Each project has its own budget limits and routing configuration.
+"""
+
 from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import ForeignKey, JSON, String, Text, UniqueConstraint
+from sqlalchemy import ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,6 +17,8 @@ from patchbay_gateway.db.base import Base
 
 
 class Project(Base):
+    """Project within an organization."""
+
     __tablename__ = "projects"
     __table_args__ = (UniqueConstraint("organization_id", "slug"),)
 

@@ -1,22 +1,21 @@
 """A2A (Agent-to-Agent) protocol placeholder.
 
-Phase 2 feature — interface only, not yet implemented.
+Phase 2 feature — defines the interface for future implementation.
+
+A2A enables the gateway to:
+  - Publish itself as an A2A Agent Card (/.well-known/agent-card.json)
+  - Accept task delegations from other agents
+  - Delegate tasks to other agents
+  - Discover agent capabilities via Agent Cards
 """
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any
 
 
 class AgentAdapter(ABC):
-    """Abstract adapter for Agent-to-Agent communication.
-
-    In the future, this enables the gateway to:
-    - Publish itself as an A2A Agent Card (/.well-known/agent-card.json)
-    - Delegate tasks to other agents
-    - Accept task delegations from other agents
-    """
+    """Abstract adapter for Agent-to-Agent communication."""
 
     agent_key: str
 

@@ -1,25 +1,35 @@
-"""Seed data for initial models and provider routes."""
+"""Seed data — populates the database with initial models, routes, and policies.
+
+Seed data is essential for:
+  - First-run experience (no manual setup required)
+  - Demo/development environments
+  - Testing routing strategies with realistic data
+"""
 
 from __future__ import annotations
 
-import uuid
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from patchbay_gateway.db.models import Organization, Project, LLMModel, ProviderRoute, VirtualKey, RoutingPolicy
+from patchbay_gateway.db.models import Organization, Project, LLMModel, ProviderRoute, RoutingPolicy
+
+logger = logging.getLogger(__name__)
 
 
 async def seed_default_organization(db: AsyncSession) -> tuple[str, str]:
-    """Create default org + project, return (org_id, project_id)."""
+    """Create default organization and project, return (org_id, project_id)."""
     result = await db.execute(select(Organization).limit(1))
-    if result.scalar_one_or_none():
-        org = result.scalar_one()
-        proj_result = await db.execute(select(Project).where(Project.organization_id == org.id).limit(1))
+    existing = result.scalar_one_or_none()
+    if existing:
+        proj_result = await db.execute(
+            select(Project).where(Project.organization_id == existing.id).limit(1)
+        )
         proj = proj_result.scalar_one()
-        return str(org.id), str(proj.id)
+        return str(existing.id), str(proj.id)
 
-    org = Organization(name="Default", slug="default")
+    org = Organization(name="Default Organization", slug="default")
     db.add(org)
     await db.flush()
 
@@ -27,11 +37,12 @@ async def seed_default_organization(db: AsyncSession) -> tuple[str, str]:
     db.add(project)
     await db.flush()
 
+    logger.info("seed_org_created", extra={"org_id": str(org.id), "project_id": str(project.id)})
     return str(org.id), str(project.id)
 
 
 async def seed_models_and_routes(db: AsyncSession, project_id: str) -> None:
-    """Seed LLM models and provider routes."""
+    """Seed LLM models and provider routes with realistic pricing."""
     existing = await db.execute(select(LLMModel).limit(1))
     if existing.scalar_one_or_none():
         return
@@ -41,17 +52,13 @@ async def seed_models_and_routes(db: AsyncSession, project_id: str) -> None:
             "canonical_name": "gpt-4o",
             "family": "openai",
             "capabilities": {"vision": True, "tool_use": True, "context_window": 128000, "max_output_tokens": 16384, "supports_streaming": True},
-            "routes": [
-                {"provider_key": "openai", "provider_model_id": "gpt-4o", "input_cost": 250, "output_cost": 1000},
-            ],
+            "routes": [{"provider_key": "openai", "provider_model_id": "gpt-4o", "input_cost": 250, "output_cost": 1000}],
         },
         {
             "canonical_name": "gpt-4o-mini",
             "family": "openai",
             "capabilities": {"vision": True, "tool_use": True, "context_window": 128000, "max_output_tokens": 16384, "supports_streaming": True},
-            "routes": [
-                {"provider_key": "openai", "provider_model_id": "gpt-4o-mini", "input_cost": 15, "output_cost": 60},
-            ],
+            "routes": [{"provider_key": "openai", "provider_model_id": "gpt-4o-mini", "input_cost": 15, "output_cost": 60}],
         },
         {
             "canonical_name": "claude-opus-4-7",
@@ -66,65 +73,49 @@ async def seed_models_and_routes(db: AsyncSession, project_id: str) -> None:
             "canonical_name": "claude-sonnet-4",
             "family": "claude",
             "capabilities": {"vision": True, "tool_use": True, "context_window": 200000, "max_output_tokens": 64000, "supports_streaming": True},
-            "routes": [
-                {"provider_key": "anthropic", "provider_model_id": "claude-sonnet-4-20250514", "input_cost": 300, "output_cost": 1500},
-            ],
+            "routes": [{"provider_key": "anthropic", "provider_model_id": "claude-sonnet-4-20250514", "input_cost": 300, "output_cost": 1500}],
         },
         {
             "canonical_name": "claude-haiku",
             "family": "claude",
             "capabilities": {"vision": True, "tool_use": True, "context_window": 200000, "max_output_tokens": 8192, "supports_streaming": True},
-            "routes": [
-                {"provider_key": "anthropic", "provider_model_id": "claude-3-5-haiku-20241022", "input_cost": 80, "output_cost": 400},
-            ],
+            "routes": [{"provider_key": "anthropic", "provider_model_id": "claude-3-5-haiku-20241022", "input_cost": 80, "output_cost": 400}],
         },
         {
             "canonical_name": "gemini-2.5-pro",
             "family": "gemini",
             "capabilities": {"vision": True, "tool_use": True, "context_window": 1000000, "max_output_tokens": 65536, "supports_streaming": True},
-            "routes": [
-                {"provider_key": "google", "provider_model_id": "gemini-2.5-pro-preview-06-05", "input_cost": 125, "output_cost": 1000},
-            ],
+            "routes": [{"provider_key": "google", "provider_model_id": "gemini-2.5-pro-preview-06-05", "input_cost": 125, "output_cost": 1000}],
         },
         {
             "canonical_name": "gemini-2.5-flash",
             "family": "gemini",
             "capabilities": {"vision": True, "tool_use": True, "context_window": 1000000, "max_output_tokens": 65536, "supports_streaming": True},
-            "routes": [
-                {"provider_key": "google", "provider_model_id": "gemini-2.5-flash-preview-05-20", "input_cost": 15, "output_cost": 60},
-            ],
+            "routes": [{"provider_key": "google", "provider_model_id": "gemini-2.5-flash-preview-05-20", "input_cost": 15, "output_cost": 60}],
         },
         {
             "canonical_name": "deepseek-coder",
             "family": "deepseek",
             "capabilities": {"tool_use": True, "context_window": 128000, "max_output_tokens": 8192, "supports_streaming": True},
-            "routes": [
-                {"provider_key": "deepseek", "provider_model_id": "deepseek-coder", "input_cost": 14, "output_cost": 28},
-            ],
+            "routes": [{"provider_key": "deepseek", "provider_model_id": "deepseek-coder", "input_cost": 14, "output_cost": 28}],
         },
         {
             "canonical_name": "deepseek-reasoner",
             "family": "deepseek",
             "capabilities": {"context_window": 64000, "max_output_tokens": 8192, "supports_streaming": True},
-            "routes": [
-                {"provider_key": "deepseek", "provider_model_id": "deepseek-reasoner", "input_cost": 55, "output_cost": 219},
-            ],
+            "routes": [{"provider_key": "deepseek", "provider_model_id": "deepseek-reasoner", "input_cost": 55, "output_cost": 219}],
         },
         {
             "canonical_name": "llama-4-maverick",
             "family": "meta",
             "capabilities": {"vision": True, "tool_use": True, "context_window": 1000000, "supports_streaming": True},
-            "routes": [
-                {"provider_key": "openrouter", "provider_model_id": "meta-llama/llama-4-maverick", "input_cost": 20, "output_cost": 60},
-            ],
+            "routes": [{"provider_key": "openrouter", "provider_model_id": "meta-llama/llama-4-maverick", "input_cost": 20, "output_cost": 60}],
         },
         {
             "canonical_name": "mistral-large",
             "family": "mistral",
             "capabilities": {"tool_use": True, "context_window": 128000, "max_output_tokens": 32768, "supports_streaming": True},
-            "routes": [
-                {"provider_key": "openrouter", "provider_model_id": "mistralai/mistral-large", "input_cost": 200, "output_cost": 600},
-            ],
+            "routes": [{"provider_key": "openrouter", "provider_model_id": "mistralai/mistral-large", "input_cost": 200, "output_cost": 600}],
         },
     ]
 
@@ -150,7 +141,7 @@ async def seed_models_and_routes(db: AsyncSession, project_id: str) -> None:
             db.add(route)
 
     await db.flush()
-    await db.commit()
+    logger.info("seed_models_created", extra={"count": len(models_data)})
 
 
 async def seed_routing_policy(db: AsyncSession, project_id: str) -> None:
@@ -168,7 +159,6 @@ async def seed_routing_policy(db: AsyncSession, project_id: str) -> None:
     )
     db.add(policy)
     await db.flush()
-    await db.commit()
 
 
 async def run_seed(db: AsyncSession) -> None:
@@ -176,3 +166,4 @@ async def run_seed(db: AsyncSession) -> None:
     org_id, project_id = await seed_default_organization(db)
     await seed_models_and_routes(db, project_id)
     await seed_routing_policy(db, project_id)
+    logger.info("seed_complete", extra={"org_id": org_id, "project_id": project_id})

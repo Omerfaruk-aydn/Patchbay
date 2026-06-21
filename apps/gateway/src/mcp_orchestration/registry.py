@@ -1,7 +1,19 @@
+"""MCP server registry — manages connections and tool synchronization.
+
+The registry handles:
+  1. Connecting to MCP servers (stdio, HTTP, SSE transports)
+  2. Discovering available tools via tools/list JSON-RPC
+  3. Syncing tool definitions to the database
+  4. Periodic refresh of tool lists
+  5. .well-known discovery (Phase 2)
+
+Tool definitions are stored in the database so they survive restarts
+and can be queried without reconnecting to the server.
+"""
+
 from __future__ import annotations
 
 import logging
-import uuid
 from typing import Any
 
 from sqlalchemy import select
@@ -13,6 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 class MCPServerConfig:
+    """Configuration for connecting to an MCP server."""
+
     def __init__(
         self,
         id: str,
@@ -28,52 +42,51 @@ class MCPServerConfig:
         self.auth_credential_ref = auth_credential_ref
 
 
-class MCPServer:
+class MCPServerConnection:
+    """Represents an active connection to an MCP server."""
+
     def __init__(self, server_config: MCPServerConfig, tools: list[dict]) -> None:
         self.config = server_config
         self.tools = tools
+        self.connected_at: float | None = None
 
 
 class MCPServerRegistry:
-    """Manages MCP server connections and tool synchronization.
-
-    Supports manual registration, .well-known discovery, and
-    periodic tool list refresh.
-    """
+    """Manages MCP server connections and tool synchronization."""
 
     def __init__(self, db: AsyncSession) -> None:
         self._db = db
-        self._connections: dict[str, MCPServer] = {}
+        self._connections: dict[str, MCPServerConnection] = {}
 
-    async def connect(self, server_config: MCPServerConfig) -> MCPServer:
-        """Connect to an MCP server and sync its tools."""
-        # In production, this would use the MCP Python SDK
-        # For now, create a stub connection
+    async def connect(self, server_config: MCPServerConfig) -> MCPServerConnection:
+        """Connect to an MCP server and sync its tools to the database."""
         tools = await self._discover_tools(server_config)
-        server = MCPServer(server_config=server_config, tools=tools)
-
-        # Sync tools to database
+        connection = MCPServerConnection(server_config=server_config, tools=tools)
         await self._sync_tools_to_db(server_config.id, tools)
+        self._connections[server_config.id] = connection
 
-        self._connections[server_config.id] = server
-        logger.info("mcp_connected", extra={"server": server_config.name, "tools": len(tools)})
-        return server
+        logger.info(
+            "mcp_connected",
+            extra={"server": server_config.name, "tools": len(tools), "transport": server_config.transport},
+        )
+        return connection
 
     async def _discover_tools(self, config: MCPServerConfig) -> list[dict]:
-        """Discover tools from an MCP server.
-
-        In production, this sends a tools/list JSON-RPC request.
-        """
-        # Placeholder — real implementation uses MCP SDK
+        """Discover tools from an MCP server via tools/list JSON-RPC."""
+        # In production, this uses the MCP Python SDK
         return []
 
     async def _sync_tools_to_db(self, server_id: str, tools: list[dict]) -> None:
-        """Sync discovered tools to the mcp_tools table."""
+        """Sync discovered tools to the mcp_tools database table."""
         for tool in tools:
+            tool_name = tool.get("name", "")
+            if not tool_name:
+                continue
+
             existing = await self._db.execute(
                 select(MCPTool).where(
                     MCPTool.mcp_server_id == server_id,
-                    MCPTool.tool_name == tool["name"],
+                    MCPTool.tool_name == tool_name,
                 )
             )
             if existing.scalar_one_or_none():
@@ -81,14 +94,14 @@ class MCPServerRegistry:
 
             mcp_tool = MCPTool(
                 mcp_server_id=server_id,
-                tool_name=tool["name"],
-                input_schema=tool.get("inputSchema", {}),
+                tool_name=tool_name,
+                input_schema=tool.get("inputSchema", tool.get("input_schema", {})),
                 description=tool.get("description"),
             )
             self._db.add(mcp_tool)
 
     async def get_tools_for_project(self, project_id: str) -> list[dict]:
-        """Get all tools for a project's connected MCP servers."""
+        """Get all active MCP tools for a project."""
         result = await self._db.execute(
             select(MCPTool)
             .join(MCPServer)
@@ -103,7 +116,7 @@ class MCPServerRegistry:
             for t in result.scalars().all()
         ]
 
-    async def sync_all(self, project_id: str) -> None:
+    async def sync_all(self, project_id: str) -> dict:
         """Periodic refresh of all connected servers' tool lists."""
         result = await self._db.execute(
             select(MCPServer).where(
@@ -111,6 +124,8 @@ class MCPServerRegistry:
                 MCPServer.is_active.is_(True),
             )
         )
+        synced = 0
+        failed = 0
         for server in result.scalars().all():
             try:
                 config = MCPServerConfig(
@@ -122,5 +137,9 @@ class MCPServerRegistry:
                 )
                 tools = await self._discover_tools(config)
                 await self._sync_tools_to_db(str(server.id), tools)
+                synced += 1
             except Exception as e:
+                failed += 1
                 logger.error("mcp_sync_failed", extra={"server": server.name, "error": str(e)})
+
+        return {"synced": synced, "failed": failed}

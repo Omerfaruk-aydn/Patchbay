@@ -1,3 +1,16 @@
+"""Provider route model — maps logical models to physical provider endpoints.
+
+A single logical model (e.g., "claude-opus-4-7") can have multiple
+routes (direct Anthropic, Bedrock, Vertex AI) with different:
+  - Pricing
+  - Latency profiles
+  - Rate limits
+  - Geographic regions
+
+The routing engine selects the optimal route based on the project's
+routing policy and real-time conditions.
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -11,6 +24,8 @@ from patchbay_gateway.db.base import Base
 
 
 class ProviderRoute(Base):
+    """Physical route to a provider for a specific model."""
+
     __tablename__ = "provider_routes"
 
     id: Mapped[uuid.UUID] = mapped_column(
