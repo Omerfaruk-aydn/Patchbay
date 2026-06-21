@@ -110,11 +110,11 @@ err_console = Console(stderr=True, force_terminal=True)
 # ═══════════════════════════════════════════════════════════════
 
 BANNER_ART = r"""
-[bold {blue}]  ____            _                 ____  __  _____ ____
+[bold blue]  ____            _                 ____  __  _____ ____
  |  _ \  ___  ___| | _____   _____| __ )/ / |_   _|  _ \
  | | | |/ _ \/ __| |/ / _ \ / / _ \  _ \ / /   | | | | |
  | |_| |  __/\__ \   < (_) | (_)  __/ |_) / /    | | |_| |
- |____/ \___||___/_|\_\___/ \___/\___/____/      |_| |____/[/bold {blue}]
+ |____/ \___||___/_|\_\___/ \___/\___/____/      |_| |____/[/bold blue]
 [dim]  v0.2.0  ·  Universal LLM Gateway & AI Coding Assistant[/dim]
 """
 
@@ -127,8 +127,7 @@ def render_banner():
     model = cfg.get("model", "gpt-4o")
     gw_url = cfg.get("gateway_url", "http://localhost:8000")
 
-    banner = BANNER_ART.format(blue=Theme.ACCENT_BLUE, cyan=Theme.ACCENT_CYAN)
-    console.print(banner)
+    console.print(BANNER_ART)
     console.print(
         f"  [dim]Provider:[/dim] [cyan]{provider}[/cyan]"
         f"  [dim]|[/dim]  [dim]Model:[/dim] [cyan]{model}[/cyan]"

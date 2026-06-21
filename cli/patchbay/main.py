@@ -198,7 +198,7 @@ def handle_slash_command(
                     continue
                 if m["role"] == "tool":
                     continue
-                color = Theme.ACCENT_GREEN if m["role"] == "assistant" else Theme.ACCENT_CYAN
+                color = "green" if m["role"] == "assistant" else "cyan"
                 prefix = "You" if m["role"] == "user" else "AI"
                 content = m.get("content", "")
                 if content:
@@ -408,7 +408,7 @@ def run_repl(provider: str, model: str):
         try:
             # Prompt
             try:
-                line = console.input(f"[bold {Theme.ACCENT_CYAN}]>[/{Theme.ACCENT_CYAN}] ")
+                line = console.input("[bold cyan]>[/bold cyan] ")
             except EOFError:
                 console.print("\n[dim]Goodbye![/dim]")
                 break
