@@ -103,7 +103,7 @@ Screen {
 .message-content {
     width: 1fr;
     height: auto;
-    wrap: true;
+    text-wrap: wrap;
 }
 
 /* ── Tool Call Display ── */
