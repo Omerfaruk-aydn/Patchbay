@@ -139,7 +139,7 @@ class GoogleAdapter(ProviderAdapter):
             async with client.stream(
                 "POST",
                 f"{self._base_url}/models/{route.provider_model_id}:streamGenerateContent?key={route.auth_credential_ref}&alt=sse",
-                json=payload,
+                json_data=payload,
             ) as response:
                 if response.status_code != 200:
                     body = await response.aread()
@@ -237,3 +237,4 @@ class GoogleAdapter(ProviderAdapter):
                 last_error = e
                 await asyncio.sleep(_RETRY_DELAY_BASE * (2 ** attempt))
         raise last_error or Exception("Max retries exceeded")
+

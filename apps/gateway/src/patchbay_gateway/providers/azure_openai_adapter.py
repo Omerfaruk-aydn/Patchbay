@@ -113,7 +113,7 @@ class AzureOpenAIAdapter(ProviderAdapter):
 
         payload = self._build_payload(request)
         data = await self._request_with_retry(
-            "POST", url, json=payload,
+            "POST", url, json_data=payload,
             headers={"api-key": route.auth_credential_ref},
         )
         return self.normalize_response(data)
@@ -128,7 +128,7 @@ class AzureOpenAIAdapter(ProviderAdapter):
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
             async with client.stream(
-                "POST", url, json=payload,
+                "POST", url, json_data=payload,
                 headers={"api-key": route.auth_credential_ref},
             ) as response:
                 if response.status_code != 200:
@@ -204,3 +204,4 @@ class AzureOpenAIAdapter(ProviderAdapter):
                 last_error = e
                 await asyncio.sleep(_RETRY_DELAY_BASE * (2 ** attempt))
         raise last_error or Exception("Max retries exceeded")
+

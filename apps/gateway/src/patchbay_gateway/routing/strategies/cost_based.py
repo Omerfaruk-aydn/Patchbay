@@ -45,13 +45,15 @@ class CostBasedStrategy(RoutingStrategy):
     ) -> Any:
         messages = request_context.get("messages", [])
         estimated_input = estimate_tokens(messages)
-        estimated_output = request_context.get("max_tokens", DEFAULT_OUTPUT_ESTIMATE)
+        estimated_output = request_context.get("max_tokens") or DEFAULT_OUTPUT_ESTIMATE
 
         scored: list[tuple[float, Any]] = []
         for route in candidates:
+            input_price = float(route.pricing_input_per_million_cents or 0)
+            output_price = float(route.pricing_output_per_million_cents or 0)
             raw_cost = (
-                (estimated_input / 1_000_000) * float(route.pricing_input_per_million_cents)
-                + (estimated_output / 1_000_000) * float(route.pricing_output_per_million_cents)
+                (estimated_input / 1_000_000) * input_price
+                + (estimated_output / 1_000_000) * output_price
             )
             scored.append((raw_cost, route))
 

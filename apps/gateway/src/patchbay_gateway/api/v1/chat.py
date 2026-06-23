@@ -111,7 +111,7 @@ async def chat_completions(
         context = {
             "model": body.model,
             "messages": [m.model_dump() for m in body.messages],
-            "max_tokens": body.max_tokens,
+            "max_tokens": body.max_tokens or 4096,
         }
         primary_route = await engine.select_route(body.model, routes, request_context=context)
 

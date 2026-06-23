@@ -97,7 +97,7 @@ class OpenRouterAdapter(ProviderAdapter):
         data = await self._request_with_retry(
             "POST",
             f"{self._base_url}/chat/completions",
-            json=payload,
+            json_data=payload,
             headers={
                 "Authorization": f"Bearer {route.auth_credential_ref}",
                 "HTTP-Referer": "https://patchbay.dev",
@@ -114,7 +114,7 @@ class OpenRouterAdapter(ProviderAdapter):
             async with client.stream(
                 "POST",
                 f"{self._base_url}/chat/completions",
-                json=payload,
+                json_data=payload,
                 headers={
                     "Authorization": f"Bearer {route.auth_credential_ref}",
                     "HTTP-Referer": "https://patchbay.dev",
@@ -196,3 +196,4 @@ class OpenRouterAdapter(ProviderAdapter):
                 last_error = e
                 await asyncio.sleep(_RETRY_DELAY_BASE * (2 ** attempt))
         raise last_error or Exception("Max retries exceeded")
+

@@ -112,7 +112,7 @@ class VertexAdapter(ProviderAdapter):
         contents = self._build_contents(request.messages)
         payload = self._build_payload(request, contents)
 
-        data = await self._request_with_retry("POST", url, json=payload)
+        data = await self._request_with_retry("POST", url, json_data=payload)
         return self.normalize_response(data)
 
     async def stream(self, route: Any, request: NormalizedRequest) -> AsyncIterator[NormalizedStreamChunk]:
@@ -162,3 +162,4 @@ class VertexAdapter(ProviderAdapter):
                 last_error = e
                 await asyncio.sleep(_RETRY_DELAY_BASE * (2 ** attempt))
         raise last_error or Exception("Max retries exceeded")
+

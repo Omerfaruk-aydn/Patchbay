@@ -116,7 +116,7 @@ class DeepSeekAdapter(ProviderAdapter):
         data = await self._request_with_retry(
             "POST",
             f"{self._base_url}/chat/completions",
-            json=payload,
+            json_data=payload,
             headers={"Authorization": f"Bearer {route.auth_credential_ref}"},
         )
         return self.normalize_response(data)
@@ -129,7 +129,7 @@ class DeepSeekAdapter(ProviderAdapter):
             async with client.stream(
                 "POST",
                 f"{self._base_url}/chat/completions",
-                json=payload,
+                json_data=payload,
                 headers={"Authorization": f"Bearer {route.auth_credential_ref}"},
             ) as response:
                 if response.status_code != 200:
@@ -210,3 +210,4 @@ class DeepSeekAdapter(ProviderAdapter):
                 last_error = e
                 await asyncio.sleep(_RETRY_DELAY_BASE * (2 ** attempt))
         raise last_error or Exception("Max retries exceeded")
+

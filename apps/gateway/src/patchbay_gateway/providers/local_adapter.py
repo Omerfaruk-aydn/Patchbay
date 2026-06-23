@@ -109,7 +109,7 @@ class LocalAdapter(ProviderAdapter):
         payload = self._build_payload(request)
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-            response = await client.post(f"{base_url}/v1/chat/completions", json=payload)
+            response = await client.post(f"{base_url}/v1/chat/completions", json_data=payload)
             response.raise_for_status()
             return self.normalize_response(response.json())
 
@@ -119,7 +119,7 @@ class LocalAdapter(ProviderAdapter):
         payload["stream"] = True
 
         async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-            async with client.stream("POST", f"{base_url}/v1/chat/completions", json=payload) as response:
+            async with client.stream("POST", f"{base_url}/v1/chat/completions", json_data=payload) as response:
                 if response.status_code != 200:
                     body = await response.aread()
                     raise Exception(f"Stream error {response.status_code}: {body.decode()[:200]}")
@@ -171,3 +171,4 @@ class LocalAdapter(ProviderAdapter):
         if request.tools:
             payload["tools"] = request.tools
         return payload
+

@@ -131,7 +131,7 @@ class AnthropicAdapter(ProviderAdapter):
         response_data = await self._request_with_retry(
             "POST",
             f"{self._base_url}/messages",
-            json=payload,
+            json_data=payload,
             headers={
                 "x-api-key": route.auth_credential_ref,
                 "anthropic-version": _API_VERSION,
@@ -150,7 +150,7 @@ class AnthropicAdapter(ProviderAdapter):
             async with client.stream(
                 "POST",
                 f"{self._base_url}/messages",
-                json=payload,
+                json_data=payload,
                 headers={
                     "x-api-key": route.auth_credential_ref,
                     "anthropic-version": _API_VERSION,
@@ -303,3 +303,4 @@ class AnthropicAdapter(ProviderAdapter):
                 await asyncio.sleep(_RETRY_DELAY_BASE * (2 ** attempt))
 
         raise last_error or Exception("Max retries exceeded")
+
