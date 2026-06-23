@@ -32,12 +32,6 @@ from patchbay.gateway import blender_get_scene, get_full_status, list_models
 
 if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-    try:
-        import io
-        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
-        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
-    except Exception:
-        pass
 
 console = Console(force_terminal=True, color_system="truecolor")
 
