@@ -38,6 +38,9 @@ enum Popup {
     CommandPalette,
     Transcript,
     FileTree,
+    DiffViewer,
+    McpTools,
+    LspDiagnostics,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -72,6 +75,27 @@ struct App {
     rx: Option<mpsc::UnboundedReceiver<gateway::StreamEvent>>,
     last_usage: Option<gateway::Usage>,
     cost_cents: f64,
+    // LSP/MCP/Diff
+    diagnostics: Vec<DiagnosticEntry>,
+    mcp_tools: Vec<McpToolEntry>,
+    diff_lines: Vec<String>,
+    diff_selected: usize,
+}
+
+#[derive(Clone, Debug)]
+struct DiagnosticEntry {
+    file: String,
+    line: u32,
+    column: u32,
+    severity: String,
+    message: String,
+}
+
+#[derive(Clone, Debug)]
+struct McpToolEntry {
+    name: String,
+    description: String,
+    server: String,
 }
 
 #[derive(Clone, Debug)]
@@ -148,6 +172,10 @@ impl Default for App {
             rx: None,
             last_usage: None,
             cost_cents: 0.0,
+            diagnostics: vec![],
+            mcp_tools: vec![],
+            diff_lines: vec![],
+            diff_selected: 0,
         }
     }
 }
@@ -191,6 +219,28 @@ impl App {
                 false
             }
             Popup::FileTree => {
+                if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
+                    self.popup = Popup::None;
+                }
+                false
+            }
+            Popup::DiffViewer => {
+                if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
+                    self.popup = Popup::None;
+                } else if key.code == KeyCode::Up && self.diff_selected > 0 {
+                    self.diff_selected -= 1;
+                } else if key.code == KeyCode::Down && self.diff_selected < self.diff_lines.len().saturating_sub(1) {
+                    self.diff_selected += 1;
+                }
+                false
+            }
+            Popup::McpTools => {
+                if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
+                    self.popup = Popup::None;
+                }
+                false
+            }
+            Popup::LspDiagnostics => {
                 if key.code == KeyCode::Esc || key.code == KeyCode::Char('q') {
                     self.popup = Popup::None;
                 }
@@ -244,6 +294,18 @@ impl App {
             }
             KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                 self.popup = Popup::FileTree;
+                false
+            }
+            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) && key.modifiers.contains(KeyModifiers::SHIFT) => {
+                self.popup = Popup::DiffViewer;
+                false
+            }
+            KeyCode::Char('m') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.popup = Popup::McpTools;
+                false
+            }
+            KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.popup = Popup::LspDiagnostics;
                 false
             }
             KeyCode::Tab => {
@@ -511,6 +573,9 @@ fn ui(f: &mut Frame, app: &App) {
         Popup::SessionPicker => render_session_picker_popup(f, app),
         Popup::Transcript => render_transcript_popup(f, app),
         Popup::FileTree => render_file_tree_popup(f, app),
+        Popup::DiffViewer => render_diff_popup(f, app),
+        Popup::McpTools => render_mcp_tools_popup(f, app),
+        Popup::LspDiagnostics => render_diagnostics_popup(f, app),
         Popup::None => {}
     }
 }
@@ -855,6 +920,120 @@ fn render_file_tree_popup(f: &mut Frame, _app: &App) {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(ACCENT))
             .title(" File Tree "),
+    );
+    f.render_widget(paragraph, area);
+}
+
+fn render_diff_popup(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 70, f.area());
+    f.render_widget(Clear, area);
+
+    let mut lines: Vec<Line> = vec![
+        Line::from(Span::styled(
+            format!(" Diff Viewer ({} changes)", app.file_changes),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )),
+    ];
+
+    if app.diff_lines.is_empty() {
+        lines.push(Line::from(Span::styled("  No changes to display.", Style::default().fg(MUTED))));
+    } else {
+        for line in &app.diff_lines {
+            let style = if line.starts_with('+') {
+                Style::default().fg(SUCCESS)
+            } else if line.starts_with('-') {
+                Style::default().fg(ERROR)
+            } else if line.starts_with('@') {
+                Style::default().fg(CYAN).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(TEXT)
+            };
+            lines.push(Line::from(Span::styled(line.clone(), style)));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(ACCENT))
+            .title(" Diff Viewer "),
+    );
+    f.render_widget(paragraph, area);
+}
+
+fn render_mcp_tools_popup(f: &mut Frame, app: &App) {
+    let area = centered_rect(60, 60, f.area());
+    f.render_widget(Clear, area);
+
+    let mut lines: Vec<Line> = vec![
+        Line::from(Span::styled(
+            format!(" MCP Tools ({})", app.mcp_tools.len()),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )),
+    ];
+
+    if app.mcp_tools.is_empty() {
+        lines.push(Line::from(Span::styled("  No MCP tools available.", Style::default().fg(MUTED))));
+        lines.push(Line::from(Span::styled("  Connect MCP servers to discover tools.", Style::default().fg(MUTED))));
+    } else {
+        for tool in &app.mcp_tools {
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {} ", tool.name), Style::default().fg(CYAN).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("({})", tool.server), Style::default().fg(MUTED)),
+            ]));
+            lines.push(Line::from(Span::styled(
+                format!("    {}", tool.description),
+                Style::default().fg(TEXT),
+            )));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(ACCENT))
+            .title(" MCP Tools "),
+    );
+    f.render_widget(paragraph, area);
+}
+
+fn render_diagnostics_popup(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 60, f.area());
+    f.render_widget(Clear, area);
+
+    let mut lines: Vec<Line> = vec![
+        Line::from(Span::styled(
+            format!(" Diagnostics ({})", app.diagnostics.len()),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
+        )),
+    ];
+
+    if app.diagnostics.is_empty() {
+        lines.push(Line::from(Span::styled("  No diagnostics. Code looks clean!", Style::default().fg(SUCCESS))));
+    } else {
+        for diag in &app.diagnostics {
+            let color = match diag.severity.as_str() {
+                "error" => ERROR,
+                "warning" => WARNING,
+                "info" => CYAN,
+                _ => TEXT,
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {} ", diag.severity), Style::default().fg(color).add_modifier(Modifier::BOLD)),
+                Span::styled(format!("{}:{} ", diag.file, diag.line), Style::default().fg(MUTED)),
+            ]));
+            lines.push(Line::from(Span::styled(
+                format!("    {}", diag.message),
+                Style::default().fg(color),
+            )));
+        }
+    }
+
+    let paragraph = Paragraph::new(lines).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(ACCENT))
+            .title(" LSP Diagnostics "),
     );
     f.render_widget(paragraph, area);
 }
