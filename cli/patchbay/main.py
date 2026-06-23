@@ -498,9 +498,10 @@ def run_repl(provider: str, model: str):
 @click.group(invoke_without_command=True)
 @click.option("--provider", "-p", default=None, help="LLM provider (openai, anthropic, deepseek, openrouter, google)")
 @click.option("--model", "-m", default=None, help="Model name (e.g. gpt-4o, claude-sonnet-4)")
+@click.option("--tui/--no-tui", default=True, help="Use full-screen TUI (default) or legacy REPL")
 @click.version_option("0.2.0", prog_name="patchbay")
 @click.pass_context
-def cli(ctx, provider, model):
+def cli(ctx, provider, model, tui):
     """Patchbay - Universal LLM Gateway & AI Coding Assistant
 
     Run without arguments to start the interactive AI assistant.
@@ -513,20 +514,24 @@ def cli(ctx, provider, model):
         ctx.obj["model"] = model
 
     if ctx.invoked_subcommand is None:
-        cfg = get_config()
-        p = provider or cfg.get("provider", "openai")
-        m = model or cfg.get("model", "gpt-4o")
-
-        # Auto-detect: if no API key for provider, show setup
-        if not validate_provider(p):
-            console.print(f"[yellow]No API key configured for {p}.[/yellow]\n")
-            _run_setup()
-            console.print()
+        if tui:
+            # Launch full-screen TUI
+            from patchbay.tui import main as tui_main
+            tui_main()
+        else:
             cfg = get_config()
-            p = cfg.get("provider", p)
-            m = cfg.get("model", m)
+            p = provider or cfg.get("provider", "openai")
+            m = model or cfg.get("model", "gpt-4o")
 
-        run_repl(p, m)
+            if not validate_provider(p):
+                console.print(f"[yellow]No API key configured for {p}.[/yellow]\n")
+                _run_setup()
+                console.print()
+                cfg = get_config()
+                p = cfg.get("provider", p)
+                m = cfg.get("model", m)
+
+            run_repl(p, m)
 
 
 # ─── Setup Wizard ───
