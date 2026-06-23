@@ -3,15 +3,14 @@ from __future__ import annotations
 import os
 import sys
 
-from patchbay.tui.app import PatchbayApp
+from patchbay.tui.app import main
 
 
-def main():
+def run():
     if sys.platform == "win32":
         os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-    app = PatchbayApp()
-    app.run()
+    main()
 
 
 if __name__ == "__main__":
-    main()
+    run()

@@ -515,9 +515,8 @@ def cli(ctx, provider, model, tui):
 
     if ctx.invoked_subcommand is None:
         if tui:
-            # Launch full-screen TUI
-            from patchbay.tui import main as tui_main
-            tui_main()
+            from patchbay.tui import run
+            run()
         else:
             cfg = get_config()
             p = provider or cfg.get("provider", "openai")
