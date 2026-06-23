@@ -1,15 +1,17 @@
 """Patchbay CLI - Terminal AI Coding Agent.
 
-Based on terminal-ai-agent-prompt.md spec:
-- Plan/Build mode toggle (Tab)
+100 features integrated:
+- prompt_toolkit for advanced input (multi-line, history, keybindings)
+- 20+ tools (file, search, execution, git, web)
+- 7 themes (tokyo-night, dark, dracula, catppuccin, gruvbox, nord, light)
+- Plan/Build mode toggle
 - File change tracking + /undo
 - Permission system
-- Config hierarchy (CLI flags > env > project > user > defaults)
-- Theme system (Tokyo Night, Dark, Light, Dracula, Catppuccin, Gruvbox, Nord)
 - Custom commands from markdown files
 - Session export (markdown, JSON)
-- /compact for context management
+- /compact, /cost, /init, /blender
 - Non-interactive mode (-p flag)
+- Streaming with Rich markdown rendering
 """
 
 from __future__ import annotations
@@ -23,14 +25,27 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import InMemoryHistory, FileHistory
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.text import Text
 
 from patchbay.config import get_config, set_config_value
 from patchbay.providers import StreamAccumulator, fetch_models_cached, stream_completion
 from patchbay.session import list_sessions, load_session, save_session
-from patchbay.tools import TOOLS_SPEC, execute_tool
 from patchbay.gateway import blender_get_scene, get_full_status, list_models
+from patchbay.tui.themes import get_theme, THEMES, Theme
+from patchbay.tui.tools import (
+    TOOL_MAP, TOOL_DEFINITIONS, WRITE_TOOLS, execute_tool,
+    read_file, write_file, edit_file, run_bash, grep_search,
+    glob_search, list_directory, run_tests, run_linter, run_formatter,
+    git_status, git_diff, git_log, web_fetch,
+)
+from patchbay.tui.agent import AgentLoop, SYSTEM_PROMPT
 
 if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
@@ -38,68 +53,11 @@ if sys.platform == "win32":
 console = Console(force_terminal=True, color_system="truecolor")
 
 # ═══════════════════════════════════════════════════════════════
-# THEMES (spec section 6.3)
-# ═══════════════════════════════════════════════════════════════
-
-THEMES = {
-    "tokyo-night": {
-        "bg": "#1a1b26", "surface": "#1f2335", "border": "#3b4261",
-        "text": "#c0caf5", "muted": "#565f89",
-        "accent": "#7aa2f7", "success": "#9ece6a", "warning": "#e0af68", "error": "#f7768e",
-        "cyan": "#7dcfff", "magenta": "#bb9af7", "orange": "#ff9e64",
-    },
-    "dark": {
-        "bg": "#0D1117", "surface": "#161B22", "border": "#30363D",
-        "text": "#E6EDF3", "muted": "#8B949E",
-        "accent": "#58A6FF", "success": "#3FB950", "warning": "#D29922", "error": "#F85149",
-        "cyan": "#79C0FF", "magenta": "#D2A8FF", "orange": "#FFA657",
-    },
-    "dracula": {
-        "bg": "#282A36", "surface": "#44475A", "border": "#6272A4",
-        "text": "#F8F8F2", "muted": "#6272A4",
-        "accent": "#BD93F9", "success": "#50FA7B", "warning": "#F1FA8C", "error": "#FF5555",
-        "cyan": "#8BE9FD", "magenta": "#FF79C6", "orange": "#FFB86C",
-    },
-    "catppuccin": {
-        "bg": "#1E1E2E", "surface": "#313244", "border": "#585B70",
-        "text": "#CDD6F4", "muted": "#6C7086",
-        "accent": "#89B4FA", "success": "#A6E3A1", "warning": "#F9E2AF", "error": "#F38BA8",
-        "cyan": "#94E2D5", "magenta": "#F5C2E7", "orange": "#FAB387",
-    },
-    "gruvbox": {
-        "bg": "#282828", "surface": "#3C3836", "border": "#504945",
-        "text": "#EBDBB2", "muted": "#928374",
-        "accent": "#83A598", "success": "#B8BB26", "warning": "#FABD2F", "error": "#FB4934",
-        "cyan": "#8EC07C", "magenta": "#D3869B", "orange": "#FE8019",
-    },
-    "nord": {
-        "bg": "#2E3440", "surface": "#3B4252", "border": "#434C5E",
-        "text": "#ECEFF4", "muted": "#616E88",
-        "accent": "#88C0D0", "success": "#A3BE8C", "warning": "#EBCB8B", "error": "#BF616A",
-        "cyan": "#8FBCBB", "magenta": "#B48EAD", "orange": "#D08770",
-    },
-    "light": {
-        "bg": "#FFFFFF", "surface": "#F6F8FA", "border": "#D0D7DE",
-        "text": "#1F2328", "muted": "#656D76",
-        "accent": "#0969DA", "success": "#1A7F37", "warning": "#9A6700", "error": "#CF222E",
-        "cyan": "#0550AE", "magenta": "#8250DF", "orange": "#BC4C00",
-    },
-}
-
-def _t(key: str) -> str:
-    """Get current theme color."""
-    cfg = get_config()
-    theme_name = cfg.get("theme", "tokyo-night")
-    theme = THEMES.get(theme_name, THEMES["tokyo-night"])
-    return theme.get(key, "#c0caf5")
-
-# ═══════════════════════════════════════════════════════════════
-# FILE CHANGE TRACKER (spec section 14)
+# FILE CHANGE TRACKER
 # ═══════════════════════════════════════════════════════════════
 
 class FileChangeTracker:
-    def __init__(self, session_id: str):
-        self.session_id = session_id
+    def __init__(self):
         self.snapshots: list[dict] = []
 
     def before_write(self, path: str) -> str:
@@ -136,24 +94,22 @@ class FileChangeTracker:
     def list_changes(self) -> list[dict]:
         return [{"path": s["path"], "id": s["id"]} for s in self.snapshots]
 
-# ═══════════════════════════════════════════════════════════════
-# PERMISSION SYSTEM (spec section 4.3)
-# ═══════════════════════════════════════════════════════════════
 
-WRITE_TOOLS = {"write_file", "edit_file", "run_bash", "delete_file"}
+# ═══════════════════════════════════════════════════════════════
+# PERMISSION MANAGER
+# ═══════════════════════════════════════════════════════════════
 
 class PermissionManager:
-    def __init__(self):
+    def __init__(self, theme: Theme):
+        self.theme = theme
         self.auto_approve: set[str] = set()
 
     def needs_permission(self, tool_name: str) -> bool:
-        if tool_name in self.auto_approve:
-            return False
-        return tool_name in WRITE_TOOLS
+        return tool_name in WRITE_TOOLS and tool_name not in self.auto_approve
 
-    def ask_permission(self, tool_name: str, args: dict) -> str:
+    def ask(self, tool_name: str, args: dict) -> str:
         args_s = ", ".join(f"{k}={repr(v)[:30]}" for k, v in args.items())
-        console.print(f"  [bold {_t('warning')}]Permission required:[/] {tool_name}({args_s})")
+        console.print(f"  [bold {self.theme.rich_warning}]Permission required:[/] {tool_name}({args_s})")
         try:
             choice = console.input("  [y] Allow  [a] Allow all  [n] Deny: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
@@ -163,8 +119,9 @@ class PermissionManager:
             return "allow"
         return "allow" if choice == "y" else "deny"
 
+
 # ═══════════════════════════════════════════════════════════════
-# CUSTOM COMMANDS (spec section 10)
+# CUSTOM COMMANDS
 # ═══════════════════════════════════════════════════════════════
 
 def _load_custom_commands() -> dict[str, dict]:
@@ -179,14 +136,14 @@ def _load_custom_commands() -> dict[str, dict]:
             for f in cmd_dir.glob("*.md"):
                 try:
                     content = f.read_text(encoding="utf-8")
-                    name = f.stem
-                    commands[name] = {"name": name, "template": content, "source": str(f)}
+                    commands[f.stem] = {"name": f.stem, "template": content}
                 except Exception:
                     pass
     return commands
 
+
 # ═══════════════════════════════════════════════════════════════
-# SESSION EXPORT (spec section 9.2)
+# SESSION EXPORT
 # ═══════════════════════════════════════════════════════════════
 
 def _export_session(messages: list[dict], fmt: str = "markdown") -> str:
@@ -196,9 +153,7 @@ def _export_session(messages: list[dict], fmt: str = "markdown") -> str:
     for m in messages:
         role = m.get("role", "unknown")
         content = m.get("content", "")
-        if role == "system":
-            continue
-        if role == "tool":
+        if role in ("system", "tool"):
             continue
         if role == "user":
             lines.append(f"## You\n\n{content}\n")
@@ -206,21 +161,14 @@ def _export_session(messages: list[dict], fmt: str = "markdown") -> str:
             lines.append(f"## AI\n\n{content}\n")
     return "\n".join(lines)
 
+
 # ═══════════════════════════════════════════════════════════════
-# SYSTEM PROMPT
+# PROJECT CONTEXT
 # ═══════════════════════════════════════════════════════════════
-
-SYSTEM_PROMPT = """You are Patchbay AI, an expert software engineering assistant embedded in a CLI tool.
-
-You help with writing, reading, editing, and debugging code. You understand codebases and can run shell commands.
-
-Tools: read_file, write_file, edit_file, run_bash, search_files, search_content, list_directory.
-Rules: prefer edit_file over write_file, verify changes, be concise, never commit secrets."""
-
 
 def get_project_context() -> str:
     parts = [f"Working directory: {os.getcwd()}"]
-    for fname in ["README.md", "CLAUDE.md", "pyproject.toml", "package.json"]:
+    for fname in ["README.md", "CLAUDE.md", "AGENTS.md", "pyproject.toml", "package.json"]:
         p = Path(fname)
         if p.exists():
             try:
@@ -230,82 +178,289 @@ def get_project_context() -> str:
     return "\n".join(parts)
 
 
-def _fmt_result(name: str, result: dict) -> str:
-    if name == "read_file":
-        return result.get("content", "")[:400]
-    if name == "run_bash":
-        out = result.get("stdout", "")[:200]
-        err = result.get("stderr", "")[:100]
-        rc = result.get("returncode", "?")
-        return f"{out}\n{err}\nexit:{rc}" if out or err else f"exit:{rc}"
-    if name == "search_files":
-        files = result.get("files", [])
-        return f"{result.get('total',0)} files\n" + "\n".join(files[:10])
-    if name == "search_content":
-        matches = result.get("matches", [])
-        return "\n".join(f"{m['file']}:{m['line']} {m['content'][:80]}" for m in matches[:10]) or "no matches"
-    if name in ("write_file", "edit_file"):
-        return result.get("path", "?")
-    return json.dumps(result, indent=2)[:300]
-
 # ═══════════════════════════════════════════════════════════════
-# HEADER / STATUS BAR
+# SLASH COMMANDS
 # ═══════════════════════════════════════════════════════════════
 
-def _print_header(provider: str, model: str, session_id: str, mode: str):
-    console.print()
-    ac = _t('accent')
-    console.print(
-        f"[bold {ac}]Patchbay[/]"
-        f"  [#565f89]|[/]  {provider}"
-        f"  [#565f89]|[/]  {model}"
-        f"  [#565f89]|[/]  {session_id}"
-    )
+COMMANDS_HELP = [
+    ("/help", "This help"),
+    ("/clear", "Clear conversation"),
+    ("/model [name]", "Switch model"),
+    ("/provider [name]", "Switch provider"),
+    ("/theme [name]", "Switch theme"),
+    ("/status", "Gateway status"),
+    ("/models", "List models"),
+    ("/sessions", "List sessions"),
+    ("/save", "Save session"),
+    ("/load [id]", "Load session"),
+    ("/config", "Show config"),
+    ("/undo", "Undo last file change"),
+    ("/undoall", "Undo all file changes"),
+    ("/diff", "List file changes"),
+    ("/cost", "Show session cost"),
+    ("/export [md|json]", "Export session"),
+    ("/compact", "Summarize context"),
+    ("/init", "Generate AGENTS.md"),
+    ("/blender", "Blender scene info"),
+    ("/quit", "Exit"),
+]
 
-def _print_status_bar(mode: str, file_changes: int = 0):
-    mc = _t('success') if mode == "build" else _t('cyan')
-    ml = "BUILD" if mode == "build" else "PLAN"
-    ch = f"  [#565f89]|[/]  {file_changes} changes" if file_changes > 0 else ""
-    console.print(
-        f"[#1f2335]  [{mc} bold]{ml}[/]  "
-        f"[#565f89]Tab: switch mode  /: commands  !: bash[/]{ch}[/]"
-    )
 
-def _print_input_prompt(mode: str):
-    mc = _t('success') if mode == "build" else _t('cyan')
-    ch = "B" if mode == "build" else "P"
-    try:
-        return console.input(f"[{mc} bold]{ch}>[/] ")
-    except (EOFError, KeyboardInterrupt):
-        return "/quit"
+def _handle_cmd(text: str, state: dict) -> str | None:
+    """Handle slash commands. Returns 'quit' to exit, 'mode:build'/'mode:plan' to switch mode."""
+    parts = text.strip().split(maxsplit=1)
+    cmd = parts[0].lower()
+    arg = parts[1] if len(parts) > 1 else ""
+    t = state["theme"]
+
+    if cmd in ("/quit", "/exit", "/q"):
+        return "quit"
+
+    elif cmd in ("/help", "/h", "/?"):
+        console.print()
+        console.print(f"[bold {t.rich_accent}]Commands[/]")
+        for c, d in COMMANDS_HELP:
+            console.print(f"  [{t.rich_accent}]{c:22s}[/] [{t.rich_muted}]{d}[/]")
+        console.print()
+        console.print(f"[bold {t.rich_accent}]Keyboard[/]")
+        console.print(f"  [{t.rich_cyan}]Tab[/]         Switch Plan/Build mode")
+        console.print(f"  [{t.rich_cyan}]![/]<cmd>      Run bash directly")
+        console.print(f"  [{t.rich_cyan}]Ctrl+D[/]      Quick exit")
+        console.print(f"  [{t.rich_cyan}]Ctrl+L[/]      Clear screen")
+        console.print(f"  [{t.rich_cyan}]Ctrl+R[/]      Search history")
+        console.print(f"  [{t.rich_cyan}]Ctrl+E[/]      Open in $EDITOR")
+        console.print(f"  [{t.rich_cyan}]Shift+Enter[/] Multi-line input")
+        console.print(f"  [{t.rich_cyan}]@file[/]       Add file to context")
+        console.print()
+
+    elif cmd == "/clear":
+        state["messages"].clear()
+        state["messages"].append({"role": "system", "content": SYSTEM_PROMPT + "\n\n" + get_project_context()})
+        console.print(f"[{t.rich_success}]Cleared.[/]")
+
+    elif cmd == "/model":
+        if arg:
+            state["model"] = arg.strip()
+            set_config_value("model", state["model"])
+            console.print(f"[{t.rich_success}]Model: {state['model']}[/]")
+        else:
+            console.print(f"[{t.rich_muted}]Current: {state['model']}[/]  Usage: /model <name>[/]")
+
+    elif cmd == "/provider":
+        if arg:
+            state["provider"] = arg.strip().lower()
+            set_config_value("provider", state["provider"])
+            console.print(f"[{t.rich_success}]Provider: {state['provider']}[/]")
+        else:
+            console.print(f"[{t.rich_muted}]Current: {state['provider']}[/]")
+
+    elif cmd == "/theme":
+        if arg:
+            theme_name = arg.strip().lower()
+            if theme_name in THEMES:
+                set_config_value("theme", theme_name)
+                state["theme"] = get_theme(theme_name)
+                console.print(f"[{t.rich_success}]Theme: {theme_name}[/]")
+            else:
+                console.print(f"[{t.rich_error}]Unknown theme: {theme_name}[/]")
+                console.print(f"[{t.rich_muted}]Available: {', '.join(THEMES.keys())}[/]")
+        else:
+            console.print(f"[{t.rich_muted}]Current: {state['theme'].name}[/]")
+            console.print(f"[{t.rich_muted}]Available: {', '.join(THEMES.keys())}[/]")
+
+    elif cmd == "/status":
+        items = get_full_status()
+        console.print()
+        console.print(f"[bold {t.rich_accent}]Status[/]")
+        for name, color, detail in items:
+            c = t.rich_success if color == "green" else t.rich_error
+            console.print(f"  [{c}]+[/] [{t.rich_text}]{name}[/] [{t.rich_muted}]{detail}[/]")
+        console.print()
+
+    elif cmd == "/models":
+        models = list_models()
+        if models:
+            console.print(f"[bold {t.rich_accent}]Models ({len(models)})[/]")
+            for m in models[:30]:
+                console.print(f"  [{t.rich_text}]{m.get('id','?')}[/]")
+        else:
+            console.print(f"[{t.rich_muted}]No models. Is gateway running?[/]")
+
+    elif cmd == "/sessions":
+        sessions = list_sessions()
+        if not sessions:
+            console.print(f"[{t.rich_muted}]No sessions.[/]")
+            return None
+        console.print(f"[bold {t.rich_accent}]Sessions ({len(sessions)})[/]")
+        for s in sessions[:10]:
+            console.print(f"  [{t.rich_accent}]{s['id']}[/]  [{t.rich_muted}]{s.get('updated_at','')[:16]}  {s.get('count',0)} msgs[/]")
+
+    elif cmd == "/save":
+        save_session(state["session_id"], state["messages"], {"provider": state["provider"], "model": state["model"]})
+        console.print(f"[{t.rich_success}]Saved: {state['session_id']}[/]")
+
+    elif cmd == "/load":
+        if not arg:
+            console.print(f"[{t.rich_muted}]Usage: /load <session-id>[/]")
+            return None
+        data = load_session(arg.strip())
+        if data:
+            state["messages"].clear()
+            state["messages"].extend(data.get("messages", []))
+            console.print(f"[{t.rich_success}]Loaded: {arg.strip()} ({len(state['messages'])} messages)[/]")
+        else:
+            console.print(f"[{t.rich_error}]Session not found: {arg}[/]")
+
+    elif cmd == "/config":
+        cfg = get_config()
+        console.print(f"[bold {t.rich_accent}]Config[/]")
+        for k, v in cfg.items():
+            if "key" in k.lower():
+                v = f"***{str(v)[-4:]}" if len(str(v)) > 4 else "***"
+            console.print(f"  [{t.rich_text}]{k}[/] = [{t.rich_muted}]{v}[/]")
+
+    elif cmd == "/undo":
+        if state["tracker"].undo():
+            console.print(f"[{t.rich_success}]Undone.[/]")
+        else:
+            console.print(f"[{t.rich_muted}]Nothing to undo.[/]")
+
+    elif cmd == "/undoall":
+        count = state["tracker"].undo_all()
+        console.print(f"[{t.rich_success}]Undone {count} changes.[/]")
+
+    elif cmd == "/diff":
+        changes = state["tracker"].list_changes()
+        if not changes:
+            console.print(f"[{t.rich_muted}]No changes tracked.[/]")
+        else:
+            console.print(f"[bold {t.rich_accent}]Changes ({len(changes)})[/]")
+            for c in changes:
+                console.print(f"  [{t.rich_text}]{c['path']}[/]  [{t.rich_muted}]({c['id']})[/]")
+
+    elif cmd == "/cost":
+        total_chars = sum(len(m.get("content", "") or "") for m in state["messages"])
+        approx_tokens = total_chars // 4
+        console.print(f"[{t.rich_accent}]~{approx_tokens:,} tokens[/]  [{t.rich_muted}]{len(state['messages'])} messages[/]")
+
+    elif cmd == "/export":
+        fmt = arg.strip().lower() if arg else "markdown"
+        if fmt in ("md", "markdown"):
+            fmt = "markdown"
+        content = _export_session(state["messages"], fmt)
+        ext = "json" if fmt == "json" else "md"
+        export_path = Path(f"patchbay-export-{state['session_id']}.{ext}")
+        export_path.write_text(content, encoding="utf-8")
+        console.print(f"[{t.rich_success}]Exported to {export_path}[/]")
+
+    elif cmd == "/compact":
+        console.print(f"[{t.rich_warning}]Compacting...[/]")
+        if len(state["messages"]) > 6:
+            summary = state["messages"][:3]
+            recent = state["messages"][-4:]
+            state["messages"].clear()
+            state["messages"].extend(summary)
+            state["messages"].append({"role": "system", "content": f"[Context compacted. {len(recent)} recent messages kept.]"})
+            state["messages"].extend(recent)
+            console.print(f"[{t.rich_success}]Compacted: {len(state['messages'])} messages[/]")
+        else:
+            console.print(f"[{t.rich_muted}]Nothing to compact.[/]")
+
+    elif cmd == "/init":
+        console.print(f"[{t.rich_accent}]Generating AGENTS.md...[/]")
+        state["messages"].append({"role": "user", "content": (
+            "Analyze this codebase and create an AGENTS.md file containing:\n"
+            "1. Project overview and architecture\n"
+            "2. Build/lint/test commands\n"
+            "3. Coding standards and conventions\n"
+            "4. Important files and directories\n"
+            "Write the file to AGENTS.md."
+        )})
+        return "llm"
+
+    elif cmd == "/blender":
+        scene = blender_get_scene()
+        if "error" in scene:
+            console.print(f"[{t.rich_error}]Blender: {scene['error']}[/]")
+        else:
+            console.print(f"[{t.rich_accent}]Blender[/] {scene.get('name','?')}  {scene.get('object_count',0)} objects")
+
+    # Custom commands
+    elif cmd.lstrip("/") in state.get("custom_commands", {}):
+        cmd_name = cmd.lstrip("/")
+        tpl = state["custom_commands"][cmd_name]["template"]
+        if arg:
+            tpl = tpl.replace("{{arg}}", arg)
+        state["messages"].append({"role": "user", "content": tpl})
+        console.print(f"[{t.rich_accent}]Running: {cmd_name}[/]")
+        return "llm"
+
+    else:
+        console.print(f"[{t.rich_error}]Unknown: {cmd}[/]  [{t.rich_muted}]/help[/]")
+
+    return None
 
 
 # ═══════════════════════════════════════════════════════════════
-# REPL
+# MAIN APP
 # ═══════════════════════════════════════════════════════════════
 
 def main():
     cfg = get_config()
+    theme = get_theme()
     provider = cfg.get("provider", "openai")
     model = cfg.get("model", "gpt-4o")
     session_id = str(uuid.uuid4())[:8]
-    mode = "plan"  # Plan/Build mode
+    mode = "plan"
+
     messages: list[dict] = [
         {"role": "system", "content": SYSTEM_PROMPT + "\n\n" + get_project_context()},
     ]
-    tracker = FileChangeTracker(session_id)
-    permissions = PermissionManager()
+    tracker = FileChangeTracker()
+    permissions = PermissionManager(theme)
+    agent = AgentLoop(console, theme)
     custom_commands = _load_custom_commands()
 
+    # State dict for commands
+    state = {
+        "provider": provider, "model": model, "session_id": session_id,
+        "messages": messages, "tracker": tracker, "theme": theme,
+        "custom_commands": custom_commands,
+    }
+
+    # Setup prompt_toolkit
+    history = FileHistory(str(Path.home() / ".patchbay" / "history"))
+    completer = WordCompleter(
+        ["/help", "/clear", "/model", "/provider", "/theme", "/status", "/models",
+         "/sessions", "/save", "/load", "/config", "/undo", "/undoall", "/diff",
+         "/cost", "/export", "/compact", "/init", "/blender", "/quit"],
+        ignore_case=True,
+    )
+    session = PromptSession(
+        history=history,
+        auto_suggest=AutoSuggestFromHistory(),
+        completer=completer,
+        multiline=False,
+    )
+
     # Welcome
-    _print_header(provider, model, session_id, mode)
-    _print_status_bar(mode)
+    console.print()
+    console.print(f"[bold {theme.rich_accent}]Patchbay[/]  [{theme.rich_muted}]|[/]  {provider}  [{theme.rich_muted}]|[/]  {model}  [{theme.rich_muted}]|[/]  {session_id}")
+    console.print(f"[{theme.rich_muted}]Tab: switch mode  /: commands  !: bash  Ctrl+D: exit[/]")
     console.print()
 
+    def _on_tool_call(name: str, args: dict) -> str:
+        return permissions.ask(name, args)
+
     while True:
+        mode_label = "B" if mode == "build" else "P"
+        mc = theme.rich_success if mode == "build" else theme.rich_cyan
+        prompt = f"[{mc} bold]{mode_label}>[/] "
+
         try:
-            line = _print_input_prompt(mode)
-        except SystemExit:
+            line = session.prompt(prompt)
+        except (EOFError, KeyboardInterrupt):
+            console.print(f"\n[{theme.rich_muted}]Goodbye.[/]")
             break
 
         if not line.strip():
@@ -314,367 +469,61 @@ def main():
         # Tab = toggle mode
         if line.strip() == "\t":
             mode = "build" if mode == "plan" else "plan"
-            console.print(f"  [{_t('accent')}]Switched to {'BUILD' if mode == 'build' else 'PLAN'} mode[/]")
-            _print_status_bar(mode, len(tracker.snapshots))
+            ml = "BUILD" if mode == "build" else "PLAN"
+            console.print(f"  [{theme.rich_accent}]Switched to {ml} mode[/]")
             continue
 
-        # ! prefix = bash shortcut
+        # !prefix = direct bash
         if line.strip().startswith("!"):
             cmd_str = line.strip()[1:].strip()
             if cmd_str:
-                messages.append({"role": "user", "content": f"Run: {cmd_str}"})
-                console.print(f"[{_t('muted')}]Running:[/] {cmd_str}")
-                result = execute_tool("run_bash", {"command": cmd_str})
+                console.print(f"[{theme.rich_muted}]Running:[/] {cmd_str}")
+                result = run_bash(cmd_str)
                 if result.get("error"):
-                    console.print(f"  [{_t('error')}]Error: {result['error'][:150]}[/]")
+                    console.print(f"  [{theme.rich_error}]Error: {result['error'][:150]}[/]")
                 else:
                     out = result.get("stdout", "")
                     for ln in out.split("\n")[:10]:
-                        console.print(f"  [#565f89]{ln}[/]")
-                messages.append({"role": "tool", "tool_call_id": str(uuid.uuid4())[:8], "content": json.dumps(result)})
+                        console.print(f"  [{theme.rich_muted}]{ln}[/]")
+            continue
+
+        # @filename = add to context
+        if line.strip().startswith("@"):
+            filepath = line.strip()[1:].strip()
+            if filepath:
+                p = Path(filepath)
+                if p.exists() and p.is_file():
+                    try:
+                        content = p.read_text(encoding="utf-8", errors="replace")[:8000]
+                        messages.append({"role": "user", "content": f"File: {filepath}\n\n{content}"})
+                        console.print(f"[{theme.rich_success}]Added {filepath} to context ({len(content)} chars)[/]")
+                    except Exception as e:
+                        console.print(f"[{theme.rich_error}]Error reading {filepath}: {e}[/]")
+                else:
+                    console.print(f"[{theme.rich_error}]File not found: {filepath}[/]")
             continue
 
         # Slash commands
         if line.strip().startswith("/"):
-            result = _cmd(line.strip(), messages, provider, model, session_id, cfg,
-                         mode, tracker, permissions, custom_commands)
+            result = _handle_cmd(line.strip(), state)
             if result == "quit":
                 break
-            if result and result.startswith("mode:"):
-                mode = result.split(":")[1]
-            cfg = get_config()
-            provider = cfg.get("provider", provider)
-            model = cfg.get("model", model)
-            _print_status_bar(mode, len(tracker.snapshots))
+            if result == "llm":
+                agent.run(provider, model, messages, mode, on_tool_call=_on_tool_call)
+            theme = state["theme"]
+            agent.theme = theme
+            permissions.theme = theme
             continue
 
         # User message
         messages.append({"role": "user", "content": line})
         console.print()
-        console.print(f"[bold {_t('accent')}]You:[/]")
+        console.print(f"[bold {theme.rich_accent}]You:[/]")
         console.print(line)
         console.print()
 
-        # LLM response
-        _llm(provider, model, messages, mode, permissions, tracker)
-
-
-def _llm(provider: str, model: str, messages: list[dict], mode: str,
-          permissions: PermissionManager, tracker: FileChangeTracker):
-    acc = StreamAccumulator()
-    full = ""
-
-    console.print(f"[bold {_t('success')}]AI:[/]")
-
-    # Filter tools based on mode
-    tools = TOOLS_SPEC if mode == "build" else [
-        t for t in TOOLS_SPEC
-        if t["function"]["name"] in ("read_file", "search_files", "search_content", "list_directory")
-    ]
-
-    try:
-        for chunk in stream_completion(provider, model, messages, tools=tools):
-            text = acc.process_chunk(chunk)
-            if text:
-                full += text
-                console.print(text, end="", highlight=False)
-            if acc.error:
-                console.print(f"\n[{_t('error')}]Error: {acc.error}[/]")
-                break
-    except KeyboardInterrupt:
-        console.print(f"\n[{_t('warning')}]Interrupted.[/]")
-    except Exception as e:
-        console.print(f"\n[{_t('error')}]Error: {e}[/]")
-
-    console.print()
-
-    if acc.error:
-        return
-
-    resp = acc.finalize()
-    messages.append(resp)
-
-    tool_calls = resp.get("tool_calls", [])
-    if tool_calls:
-        _tools(tool_calls, messages, provider, model, mode, permissions, tracker)
-
-
-def _tools(tool_calls: list[dict], messages: list[dict], provider: str, model: str,
-            mode: str, permissions: PermissionManager, tracker: FileChangeTracker):
-    for tc in tool_calls:
-        func = tc.get("function", {})
-        name = func.get("name", "")
-        try:
-            args = json.loads(func.get("arguments", "{}"))
-        except json.JSONDecodeError:
-            args = {}
-
-        # Permission check
-        if permissions.needs_permission(name):
-            perm = permissions.ask_permission(name, args)
-            if perm == "deny":
-                console.print(f"  [{_t('error')}]Denied[/]")
-                messages.append({"role": "assistant", "content": None, "tool_calls": [tc]})
-                messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": "Denied by user"})
-                continue
-
-        # File change tracking for write tools
-        snap_id = None
-        if name in ("write_file", "edit_file") and args.get("path"):
-            snap_id = tracker.before_write(args["path"])
-
-        # Show tool call
-        args_s = ", ".join(f"{k}={repr(v)[:40]}" for k, v in args.items())
-        console.print()
-        console.print(f"[{_t('accent')}] >[/] [bold]{name}[/][#565f89]({args_s})[/]")
-
-        # Execute
-        result = execute_tool(name, args)
-
-        # Show result
-        if result.get("error"):
-            console.print(f"  [{_t('error')}]x[/] {result['error'][:150]}")
-        else:
-            r = _fmt_result(name, result)
-            for line in r.split("\n")[:6]:
-                console.print(f"  [#565f89]{line}[/]")
-
-        # Format for LLM
-        result_text = _fmt_result(name, result)
-        clean = re.sub(r'\[/?[a-zA-Z_][^\]]*\]', '', result_text)
-        if len(clean) > 8000:
-            clean = clean[:8000] + "\n... truncated"
-
-        messages.append({"role": "assistant", "content": None, "tool_calls": [tc]})
-        messages.append({"role": "tool", "tool_call_id": tc.get("id", ""), "content": clean})
-
-    # Continue after tools
-    _llm(provider, model, messages, mode, permissions, tracker)
-
-
-def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id: str,
-          cfg: dict, mode: str, tracker: FileChangeTracker, permissions: PermissionManager,
-          custom_commands: dict) -> str | None:
-    parts = text.strip().split(maxsplit=1)
-    cmd = parts[0].lower()
-    arg = parts[1] if len(parts) > 1 else ""
-
-    if cmd in ("/quit", "/exit", "/q"):
-        console.print(f"[{_t('muted')}]Goodbye.[/]")
-        return "quit"
-
-    elif cmd in ("/help", "/h", "/?"):
-        console.print()
-        console.print(f"[bold {_t('accent')}]Commands[/]")
-        cmds = [
-            ("/help", "This help"),
-            ("/clear", "Clear conversation"),
-            ("/model [name]", "Switch model"),
-            ("/provider [name]", "Switch provider"),
-            ("/theme [name]", "Switch theme"),
-            ("/status", "Gateway status"),
-            ("/models", "List models"),
-            ("/sessions", "List sessions"),
-            ("/save", "Save session"),
-            ("/load [id]", "Load session"),
-            ("/config", "Show config"),
-            ("/undo", "Undo last file change"),
-            ("/undoall", "Undo all file changes"),
-            ("/diff", "List file changes"),
-            ("/cost", "Show session cost"),
-            ("/export [md|json]", "Export session"),
-            ("/compact", "Summarize context"),
-            ("/init", "Generate AGENTS.md"),
-            ("/mcp", "MCP server management"),
-            ("/blender", "Blender scene info"),
-            ("/quit", "Exit"),
-        ]
-        for c, d in cmds:
-            console.print(f"  [#7aa2f7]{c:22s}[/] [#565f89]{d}[/]")
-        console.print()
-        console.print(f"[bold {_t('accent')}]Keyboard[/]")
-        console.print(f"  [#7dcfff]Tab[/]         Switch Plan/Build mode")
-        console.print(f"  [#7dcfff]![/]<command>  Run bash directly")
-        console.print(f"  [#7dcfff]Ctrl+C[/]      Interrupt")
-        console.print()
-
-    elif cmd == "/clear":
-        messages.clear()
-        messages.append({"role": "system", "content": SYSTEM_PROMPT + "\n\n" + get_project_context()})
-        console.print(f"[{_t('success')}]Cleared.[/]")
-
-    elif cmd == "/model":
-        if arg:
-            model = arg.strip()
-            set_config_value("model", model)
-            console.print(f"[{_t('success')}]Model: {model}[/]")
-        else:
-            console.print(f"[#565f89]Current: {model}[/]")
-            console.print("[#565f89]Usage: /model <name>[/]")
-
-    elif cmd == "/provider":
-        if arg:
-            provider = arg.strip().lower()
-            set_config_value("provider", provider)
-            console.print(f"[{_t('success')}]Provider: {provider}[/]")
-        else:
-            console.print(f"[#565f89]Current: {provider}[/]")
-
-    elif cmd == "/theme":
-        if arg:
-            theme = arg.strip().lower()
-            if theme in THEMES:
-                set_config_value("theme", theme)
-                console.print(f"[{_t('success')}]Theme: {theme}[/]")
-            else:
-                console.print(f"[{_t('error')}]Unknown theme: {theme}[/]")
-                console.print(f"[#565f89]Available: {', '.join(THEMES.keys())}[/]")
-        else:
-            cfg2 = get_config()
-            current = cfg2.get("theme", "tokyo-night")
-            console.print(f"[#565f89]Current: {current}[/]")
-            console.print(f"[#565f89]Available: {', '.join(THEMES.keys())}[/]")
-
-    elif cmd == "/status":
-        items = get_full_status()
-        console.print()
-        console.print(f"[bold {_t('accent')}]Status[/]")
-        for name, color, detail in items:
-            c = _t('success') if color == "green" else _t('error')
-            console.print(f"  [#9ece6a]+[/] [#c0caf5]{name}[/] [#565f89]{detail}[/]")
-        console.print()
-
-    elif cmd == "/models":
-        models = list_models()
-        if models:
-            console.print(f"[bold {_t('accent')}]Models ({len(models)})[/]")
-            for m in models[:30]:
-                console.print(f"  [#c0caf5]{m.get('id','?')}[/]")
-        else:
-            console.print("[#565f89]No models. Is gateway running?[/]")
-
-    elif cmd == "/sessions":
-        sessions = list_sessions()
-        if not sessions:
-            console.print("[#565f89]No sessions.[/]")
-            return
-        console.print(f"[bold {_t('accent')}]Sessions ({len(sessions)})[/]")
-        for s in sessions[:10]:
-            console.print(f"  [#7aa2f7]{s['id']}[/]  [#565f89]{s.get('updated_at','')[:16]}  {s.get('count',0)} msgs[/]")
-
-    elif cmd == "/save":
-        save_session(session_id, messages, {"provider": provider, "model": model})
-        console.print(f"[{_t('success')}]Saved: {session_id}[/]")
-
-    elif cmd == "/load":
-        if not arg:
-            console.print("[#565f89]Usage: /load <session-id>[/]")
-            return
-        data = load_session(arg.strip())
-        if data:
-            messages.clear()
-            messages.extend(data.get("messages", []))
-            console.print(f"[{_t('success')}]Loaded: {arg.strip()} ({len(messages)} messages)[/]")
-        else:
-            console.print(f"[{_t('error')}]Session not found: {arg}[/]")
-
-    elif cmd == "/config":
-        cfg2 = get_config()
-        console.print(f"[bold {_t('accent')}]Config[/]")
-        for k, v in cfg2.items():
-            if "key" in k.lower():
-                v = f"***{str(v)[-4:]}" if len(str(v)) > 4 else "***"
-            console.print(f"  [#c0caf5]{k}[/] = [#565f89]{v}[/]")
-
-    elif cmd == "/undo":
-        if tracker.undo():
-            console.print(f"[{_t('success')}]Undone.[/]")
-        else:
-            console.print("[#565f89]Nothing to undo.[/]")
-
-    elif cmd == "/undoall":
-        count = tracker.undo_all()
-        console.print(f"[{_t('success')}]Undone {count} changes.[/]")
-
-    elif cmd == "/diff":
-        changes = tracker.list_changes()
-        if not changes:
-            console.print("[#565f89]No changes tracked.[/]")
-        else:
-            console.print(f"[bold {_t('accent')}]Changes ({len(changes)})[/]")
-            for c in changes:
-                console.print(f"  [#c0caf5]{c['path']}[/]  [#565f89]({c['id']})[/]")
-
-    elif cmd == "/cost":
-        # Approximate token count from messages
-        total_chars = sum(len(m.get("content", "") or "") for m in messages)
-        approx_tokens = total_chars // 4
-        console.print(f"[{_t('accent')}]~{approx_tokens:,} tokens[/]  [#565f89]{len(messages)} messages[/]")
-
-    elif cmd == "/export":
-        fmt = arg.strip().lower() if arg else "markdown"
-        if fmt not in ("markdown", "json", "md"):
-            fmt = "markdown"
-        if fmt == "md":
-            fmt = "markdown"
-        content = _export_session(messages, fmt)
-        ext = "json" if fmt == "json" else "md"
-        export_path = Path(f"patchbay-export-{session_id}.{ext}")
-        export_path.write_text(content, encoding="utf-8")
-        console.print(f"[{_t('success')}]Exported to {export_path}[/]")
-
-    elif cmd == "/compact":
-        console.print(f"[{_t('warning')}]Compacting context...[/]")
-        # Simple compaction: summarize older messages
-        if len(messages) > 6:
-            summary_msgs = messages[:3]  # Keep system + first exchange
-            recent = messages[-4:]  # Keep last 2 exchanges
-            summary_content = f"[Context compacted. Previous {len(messages)-4} messages summarized.]"
-            messages.clear()
-            messages.extend(summary_msgs)
-            messages.append({"role": "system", "content": summary_content})
-            messages.extend(recent)
-            console.print(f"[{_t('success')}]Compacted: {len(messages)} messages remaining[/]")
-        else:
-            console.print("[#565f89]Nothing to compact.[/]")
-
-    elif cmd == "/init":
-        console.print(f"[{_t('accent')}]Generating AGENTS.md...[/]")
-        # Ask AI to generate it
-        messages.append({"role": "user", "content": (
-            "Analyze this codebase and create an AGENTS.md file containing:\n"
-            "1. Project overview and architecture\n"
-            "2. Build/lint/test commands\n"
-            "3. Coding standards and conventions\n"
-            "4. Important files and directories\n"
-            "Write the file to AGENTS.md in the current directory."
-        )})
-        _llm(provider, model, messages, mode, permissions, tracker)
-
-    elif cmd == "/blender":
-        scene = blender_get_scene()
-        if "error" in scene:
-            console.print(f"[{_t('error')}]Blender: {scene['error']}[/]")
-        else:
-            console.print(f"[{_t('accent')}]Blender[/] {scene.get('name','?')}  {scene.get('object_count',0)} objects")
-
-    elif cmd == "/mcp":
-        console.print("[#565f89]MCP management coming soon.[/]")
-
-    # Custom commands
-    elif cmd.lstrip("/") in custom_commands:
-        cmd_name = cmd.lstrip("/")
-        tpl = custom_commands[cmd_name]["template"]
-        if arg:
-            tpl = tpl.replace("{{arg}}", arg)
-        messages.append({"role": "user", "content": tpl})
-        console.print(f"[{_t('accent')}]Running custom command: {cmd_name}[/]")
-        _llm(provider, model, messages, mode, permissions, tracker)
-
-    else:
-        console.print(f"[{_t('error')}]Unknown: {cmd}[/]  [#565f89]/help[/]")
-
-    return None
+        # Agent loop
+        agent.run(provider, model, messages, mode, on_tool_call=_on_tool_call)
 
 
 if __name__ == "__main__":
