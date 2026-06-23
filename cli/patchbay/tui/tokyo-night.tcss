@@ -1,29 +1,27 @@
-$primary: #7aa2f7;
-$secondary: #bb9af7;
-$accent: #7dcfff;
-$succ: #9ece6a;
-$warn: #e0af68;
-$err-color: #f7768e;
-$bg: #1a1b26;
-$bg-light: #1f2335;
-$bg-lighter: #24283b;
-$surface: #2a2e42;
-$panel: #24283b;
-$txt: #c0caf5;
-$txt-dim: #565f89;
-$bdr: #3b4261;
-$bdr-subtle: #2f3549;
-$bdr-focus: #7aa2f7;
+$pb-blue: #7aa2f7;
+$pb-purple: #bb9af7;
+$pb-cyan: #7dcfff;
+$pb-green: #9ece6a;
+$pb-orange: #e0af68;
+$pb-red: #f7768e;
+$pb-bg: #1a1b26;
+$pb-bg1: #1f2335;
+$pb-bg2: #24283b;
+$pb-bg3: #2a2e42;
+$pb-txt: #c0caf5;
+$pb-dim: #565f89;
+$pb-bdr: #3b4261;
+$pb-bdr2: #2f3549;
 
 Screen {
-    background: $bg;
+    background: $pb-bg;
 }
 
 #status-bar {
     dock: bottom;
     height: 1;
-    background: $bg-light;
-    color: $txt-dim;
+    background: $pb-bg1;
+    color: $pb-dim;
     padding: 0 1;
     layer: above;
 }
@@ -39,19 +37,19 @@ Screen {
     height: auto;
     max-height: 40%;
     padding: 0 1;
-    background: $bg;
+    background: $pb-bg;
 }
 
 #input-area Input {
-    background: $surface;
-    color: $txt;
-    border: tall $bdr;
+    background: $pb-bg3;
+    color: $pb-txt;
+    border: tall $pb-bdr;
     padding: 0 1;
     margin: 0;
 }
 
 #input-area Input:focus {
-    border: tall $bdr-focus;
+    border: tall $pb-blue;
 }
 
 .message-label {
@@ -69,28 +67,28 @@ Screen {
 .tool-call {
     padding: 0 1;
     margin: 0 0 0 2;
-    background: $bg-lighter;
-    border-left: tall $warn;
+    background: $pb-bg2;
+    border-left: tall $pb-orange;
     height: auto;
 }
 
 .tool-result {
     padding: 0 1;
     margin: 0 0 0 2;
-    background: $bg-lighter;
-    border-left: tall $succ;
+    background: $pb-bg2;
+    border-left: tall $pb-green;
     height: auto;
 }
 
 .tool-result-error {
-    border-left: tall $err-color;
+    border-left: tall $pb-red;
 }
 
 #streaming-indicator {
     dock: bottom;
     height: 1;
-    background: $bg;
-    color: $accent;
+    background: $pb-bg;
+    color: $pb-cyan;
     padding: 0 1;
     layer: above;
     display: none;
