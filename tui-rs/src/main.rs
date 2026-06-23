@@ -66,8 +66,11 @@ struct App {
     model_list: Vec<String>,
     model_selected: usize,
     gateway_url: String,
+    api_key: String,
     stream_buffer: String,
     rx: Option<mpsc::UnboundedReceiver<gateway::StreamEvent>>,
+    last_usage: Option<gateway::Usage>,
+    cost_cents: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -136,9 +139,14 @@ impl Default for App {
                 "deepseek-chat".to_string(),
             ],
             model_selected: 0,
-            gateway_url: "http://localhost:8000".to_string(),
+            gateway_url: std::env::var("PATCHBAY_GATEWAY_URL")
+                .unwrap_or_else(|_| "http://localhost:8000".to_string()),
+            api_key: std::env::var("PATCHBAY_API_KEY")
+                .unwrap_or_else(|_| "".to_string()),
             stream_buffer: String::new(),
             rx: None,
+            last_usage: None,
+            cost_cents: 0.0,
         }
     }
 }
@@ -597,22 +605,35 @@ fn render_status_bar(f: &mut Frame, app: &App, area: Rect) {
         Mode::Build => "BUILD",
     };
 
-    let line = Line::from(vec![
+    let mut spans = vec![
         Span::styled(format!(" {} ", mode_label), Style::default().fg(mode_color).add_modifier(Modifier::BOLD)),
-        Span::styled(" Tab:switch ", Style::default().fg(MUTED)),
-        Span::styled("/ ", Style::default().fg(MUTED)),
-        Span::styled("Ctrl+K ", Style::default().fg(CYAN)),
-        Span::styled("cmd ", Style::default().fg(MUTED)),
-        Span::styled("Ctrl+P ", Style::default().fg(CYAN)),
-        Span::styled("model ", Style::default().fg(MUTED)),
-        Span::styled("Ctrl+S ", Style::default().fg(CYAN)),
-        Span::styled("session ", Style::default().fg(MUTED)),
-        Span::styled("Ctrl+H ", Style::default().fg(CYAN)),
-        Span::styled("help ", Style::default().fg(MUTED)),
-        Span::styled("Ctrl+D ", Style::default().fg(CYAN)),
-        Span::styled("exit", Style::default().fg(MUTED)),
-    ]);
+        Span::styled(" Tab ", Style::default().fg(MUTED)),
+    ];
 
+    // Add streaming indicator
+    if app.is_generating {
+        spans.push(Span::styled(" ● generating ", Style::default().fg(WARNING)));
+    }
+
+    // Add usage info
+        if let Some(usage) = &app.last_usage {
+            if let Some(tokens) = usage.total_tokens {
+                spans.push(Span::styled(
+                    format!(" {} tokens ", tokens),
+                    Style::default().fg(MUTED),
+                ));
+            }
+            if let Some(_cost) = usage.prompt_tokens {
+                spans.push(Span::styled(
+                    format!(" ~${:.4} ", app.cost_cents / 100.0),
+                    Style::default().fg(MUTED),
+                ));
+            }
+        }
+
+    spans.push(Span::styled(" Ctrl+K cmd  Ctrl+P model  Ctrl+H help  Ctrl+D exit", Style::default().fg(MUTED)));
+
+    let line = Line::from(spans);
     let paragraph = Paragraph::new(line).block(
         Block::default()
             .borders(Borders::TOP)
@@ -873,19 +894,29 @@ async fn main() -> Result<()> {
     let mut app = App::default();
     let gw = gateway::GatewayClient::new(&app.gateway_url);
 
+    // Try to fetch models from gateway on startup
+    if let Ok(models) = gw.list_models().await {
+        if !models.is_empty() {
+            app.model_list = models.iter().map(|m| m.id.clone()).collect();
+            app.status_message = format!("Loaded {} models from gateway", models.len());
+        }
+    }
+
     // Main loop
     loop {
         // Process streaming events
         let mut done_event = false;
         let mut error_event = None;
+        let mut usage_data = None;
         if let Some(rx) = app.rx.as_mut() {
             while let Ok(event) = rx.try_recv() {
                 match event {
                     gateway::StreamEvent::Text(text) => {
                         app.stream_buffer.push_str(&text);
                     }
-                    gateway::StreamEvent::Done => {
+                    gateway::StreamEvent::Done(usage) => {
                         done_event = true;
+                        usage_data = usage;
                     }
                     gateway::StreamEvent::Error(err) => {
                         error_event = Some(err);
@@ -900,6 +931,12 @@ async fn main() -> Result<()> {
                     role: "assistant".to_string(),
                     content: Some(content),
                 });
+            }
+            if let Some(u) = &usage_data {
+                app.last_usage = Some(u.clone());
+                if let Some(tokens) = u.total_tokens {
+                    app.token_count += tokens as usize;
+                }
             }
             app.stream_buffer.clear();
             app.is_generating = false;
@@ -927,7 +964,7 @@ async fn main() -> Result<()> {
                     // Add system prompt
                     gw_messages.insert(0, gateway::ChatMessage {
                         role: "system".to_string(),
-                        content: Some("You are Patchbay AI, a helpful coding assistant. Be concise.".to_string()),
+                        content: Some("You are Patchbay AI, a helpful coding assistant. Be concise and helpful.".to_string()),
                     });
 
                     let (tx, rx) = mpsc::unbounded_channel();
@@ -937,7 +974,13 @@ async fn main() -> Result<()> {
                     let model = app.model.clone();
                     let gw_clone = gw.clone();
                     tokio::spawn(async move {
-                        let _ = gw_clone.stream_completion(&model, gw_messages, tx).await;
+                        let _ = gw_clone.stream_completion(
+                            &model,
+                            gw_messages,
+                            Some(0.7),
+                            Some(4096),
+                            tx,
+                        ).await;
                     });
                 }
             }
