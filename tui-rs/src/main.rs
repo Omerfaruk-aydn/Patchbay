@@ -1,3 +1,5 @@
+mod gateway;
+
 use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyModifiers},
@@ -14,6 +16,7 @@ use ratatui::{
 };
 use serde::{Deserialize, Serialize};
 use std::io;
+use tokio::sync::mpsc;
 
 // ═══════════════════════════════════════════════════════════════
 // TYPES
@@ -39,10 +42,11 @@ enum Popup {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ChatMessage {
     role: String,
-    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 struct App {
     mode: Mode,
     popup: Popup,
@@ -61,6 +65,9 @@ struct App {
     command_selected: usize,
     model_list: Vec<String>,
     model_selected: usize,
+    gateway_url: String,
+    stream_buffer: String,
+    rx: Option<mpsc::UnboundedReceiver<gateway::StreamEvent>>,
 }
 
 #[derive(Clone, Debug)]
@@ -105,7 +112,7 @@ impl Default for App {
             popup: Popup::None,
             messages: vec![ChatMessage {
                 role: "system".to_string(),
-                content: "Welcome to Patchbay AI".to_string(),
+                content: Some("Welcome to Patchbay AI".to_string()),
             }],
             input: String::new(),
             input_cursor: 0,
@@ -129,6 +136,9 @@ impl Default for App {
                 "deepseek-chat".to_string(),
             ],
             model_selected: 0,
+            gateway_url: "http://localhost:8000".to_string(),
+            stream_buffer: String::new(),
+            rx: None,
         }
     }
 }
@@ -218,7 +228,7 @@ impl App {
                 self.messages.clear();
                 self.messages.push(ChatMessage {
                     role: "system".to_string(),
-                    content: "New session started".to_string(),
+                    content: Some("New session started".to_string()),
                 });
                 self.session_id = format!("{:08x}", rand::random::<u32>());
                 false
@@ -384,18 +394,17 @@ impl App {
             let cmd_name = cmd.split_whitespace().next().unwrap_or(cmd);
             self.handle_command(cmd_name);
         } else if input.starts_with('!') {
-            // Direct bash
             let cmd = input.trim_start_matches('!').trim();
             self.status_message = format!("Running: {}", cmd);
         } else {
-            // User message
             self.messages.push(ChatMessage {
                 role: "user".to_string(),
-                content: input,
+                content: Some(input),
             });
             self.is_generating = true;
             self.status_message = "Generating...".to_string();
-            // In real impl, this would call the gateway API
+            self.stream_buffer.clear();
+            // Gateway streaming is triggered in main loop
         }
     }
 
@@ -406,7 +415,7 @@ impl App {
                 self.messages.clear();
                 self.messages.push(ChatMessage {
                     role: "system".to_string(),
-                    content: "Cleared.".to_string(),
+                    content: Some("Cleared.".to_string()),
                 });
             }
             "help" => self.popup = Popup::Help,
@@ -419,7 +428,7 @@ impl App {
                 self.messages.clear();
                 self.messages.push(ChatMessage {
                     role: "system".to_string(),
-                    content: "New session".to_string(),
+                    content: Some("New session".to_string()),
                 });
                 self.session_id = format!("{:08x}", rand::random::<u32>());
             }
@@ -434,7 +443,7 @@ impl App {
                     self.messages.truncate(3);
                     self.messages.push(ChatMessage {
                         role: "system".to_string(),
-                        content: format!("Compacted. {} recent kept.", recent.len()),
+                        content: Some(format!("Compacted. {} recent kept.", recent.len())),
                     });
                     self.messages.extend(recent);
                     self.status_message = "Compacted.".to_string();
@@ -532,8 +541,10 @@ fn render_chat(f: &mut Frame, app: &App, area: Rect) {
                 lines.push(Line::from(vec![
                     Span::styled(" You ", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD)),
                 ]));
-                for line in msg.content.lines() {
-                    lines.push(Line::from(Span::raw(line.to_string())));
+                if let Some(content) = &msg.content {
+                    for line in content.lines() {
+                        lines.push(Line::from(Span::raw(line.to_string())));
+                    }
                 }
                 lines.push(Line::from(""));
             }
@@ -541,18 +552,31 @@ fn render_chat(f: &mut Frame, app: &App, area: Rect) {
                 lines.push(Line::from(vec![
                     Span::styled(" AI ", Style::default().fg(SUCCESS).add_modifier(Modifier::BOLD)),
                 ]));
-                for line in msg.content.lines() {
-                    lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(TEXT))));
+                if let Some(content) = &msg.content {
+                    for line in content.lines() {
+                        lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(TEXT))));
+                    }
                 }
                 lines.push(Line::from(""));
             }
             "system" => {
+                let content = msg.content.as_deref().unwrap_or("");
                 lines.push(Line::from(Span::styled(
-                    format!(" {} ", msg.content),
+                    format!(" {}", content),
                     Style::default().fg(MUTED),
                 )));
             }
             _ => {}
+        }
+    }
+
+    // Show streaming buffer
+    if app.is_generating && !app.stream_buffer.is_empty() {
+        lines.push(Line::from(vec![
+            Span::styled(" AI ", Style::default().fg(SUCCESS).add_modifier(Modifier::BOLD)),
+        ]));
+        for line in app.stream_buffer.lines() {
+            lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(TEXT))));
         }
     }
 
@@ -762,14 +786,18 @@ fn render_transcript_popup(f: &mut Frame, app: &App) {
         match msg.role.as_str() {
             "user" => {
                 lines.push(Line::from(Span::styled(" You:", Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))));
-                for line in msg.content.lines().take(5) {
-                    lines.push(Line::from(Span::raw(line.to_string())));
+                if let Some(content) = &msg.content {
+                    for line in content.lines().take(5) {
+                        lines.push(Line::from(Span::raw(line.to_string())));
+                    }
                 }
             }
             "assistant" => {
                 lines.push(Line::from(Span::styled(" AI:", Style::default().fg(SUCCESS).add_modifier(Modifier::BOLD))));
-                for line in msg.content.lines().take(5) {
-                    lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(TEXT))));
+                if let Some(content) = &msg.content {
+                    for line in content.lines().take(5) {
+                        lines.push(Line::from(Span::styled(line.to_string(), Style::default().fg(TEXT))));
+                    }
                 }
             }
             _ => {}
@@ -843,12 +871,81 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::default();
+    let gw = gateway::GatewayClient::new(&app.gateway_url);
 
     // Main loop
     loop {
+        // Process streaming events
+        let mut done_event = false;
+        let mut error_event = None;
+        if let Some(rx) = app.rx.as_mut() {
+            while let Ok(event) = rx.try_recv() {
+                match event {
+                    gateway::StreamEvent::Text(text) => {
+                        app.stream_buffer.push_str(&text);
+                    }
+                    gateway::StreamEvent::Done => {
+                        done_event = true;
+                    }
+                    gateway::StreamEvent::Error(err) => {
+                        error_event = Some(err);
+                    }
+                }
+            }
+        }
+        if done_event {
+            let content = app.stream_buffer.clone();
+            if !content.is_empty() {
+                app.messages.push(ChatMessage {
+                    role: "assistant".to_string(),
+                    content: Some(content),
+                });
+            }
+            app.stream_buffer.clear();
+            app.is_generating = false;
+            app.status_message.clear();
+            app.rx = None;
+        }
+        if let Some(err) = error_event {
+            app.stream_buffer.clear();
+            app.is_generating = false;
+            app.status_message = format!("Error: {}", err);
+            app.rx = None;
+        }
+
+        // Trigger streaming if needed
+        if app.is_generating && app.rx.is_none() {
+            if let Some(last_msg) = app.messages.last() {
+                if last_msg.role == "user" {
+                    let mut gw_messages: Vec<gateway::ChatMessage> = app.messages.iter().map(|m| {
+                        gateway::ChatMessage {
+                            role: m.role.clone(),
+                            content: m.content.clone(),
+                        }
+                    }).collect();
+
+                    // Add system prompt
+                    gw_messages.insert(0, gateway::ChatMessage {
+                        role: "system".to_string(),
+                        content: Some("You are Patchbay AI, a helpful coding assistant. Be concise.".to_string()),
+                    });
+
+                    let (tx, rx) = mpsc::unbounded_channel();
+                    app.rx = Some(rx);
+                    app.stream_buffer.clear();
+
+                    let model = app.model.clone();
+                    let gw_clone = gw.clone();
+                    tokio::spawn(async move {
+                        let _ = gw_clone.stream_completion(&model, gw_messages, tx).await;
+                    });
+                }
+            }
+        }
+
         terminal.draw(|f| ui(f, &app))?;
 
-        if event::poll(std::time::Duration::from_millis(100))? {
+        if event::poll(std::time::Duration::from_millis(50))? {
             if let Event::Key(key) = event::read()? {
                 if app.handle_key(key) {
                     break;
