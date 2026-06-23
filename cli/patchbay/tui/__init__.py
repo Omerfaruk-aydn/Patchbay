@@ -7,7 +7,6 @@ from patchbay.tui.app import PatchbayApp
 
 
 def main():
-    """Entry point for the TUI application."""
     if sys.platform == "win32":
         os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     app = PatchbayApp()
