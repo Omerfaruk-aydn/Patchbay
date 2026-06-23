@@ -318,19 +318,6 @@ Screen {
     color: $text-muted;
 }
 
-/* ── Scrollbar ── */
-ScrollBar {
-    background: transparent;
-}
-
-ScrollBar-thumb {
-    background: $border;
-}
-
-ScrollBar-thumb:hover {
-    background: $text-muted;
-}
-
 /* ── Log Screen ── */
 #log-container {
     height: 1fr;
