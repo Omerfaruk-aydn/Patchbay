@@ -254,28 +254,28 @@ def _fmt_result(name: str, result: dict) -> str:
 
 def _print_header(provider: str, model: str, session_id: str, mode: str):
     console.print()
+    ac = _t('accent')
     console.print(
-        f"[bold {_t('accent')}]Patchbay[/]"
+        f"[bold {ac}]Patchbay[/]"
         f"  [#565f89]|[/]  {provider}"
         f"  [#565f89]|[/]  {model}"
         f"  [#565f89]|[/]  {session_id}"
     )
 
 def _print_status_bar(mode: str, file_changes: int = 0):
-    mode_color = _t('success') if mode == "build" else _t('cyan')
-    mode_label = "BUILD" if mode == "build" else "PLAN"
-    changes = f"  {_t('muted')}|[/]  {file_changes} changes" if file_changes > 0 else ""
+    mc = _t('success') if mode == "build" else _t('cyan')
+    ml = "BUILD" if mode == "build" else "PLAN"
+    ch = f"  [#565f89]|[/]  {file_changes} changes" if file_changes > 0 else ""
     console.print(
-        f"[{_t('surface')}]  [{mode_color} bold]{mode_label}[/]"
-        f"  {_t('muted')}Tab: switch mode  /: commands  !: bash[/]"
-        f"{changes}[/]"
+        f"[#1f2335]  [{mc} bold]{ml}[/]  "
+        f"[#565f89]Tab: switch mode  /: commands  !: bash[/]{ch}[/]"
     )
 
 def _print_input_prompt(mode: str):
-    mode_color = _t('success') if mode == "build" else _t('cyan')
-    mode_char = "B" if mode == "build" else "P"
+    mc = _t('success') if mode == "build" else _t('cyan')
+    ch = "B" if mode == "build" else "P"
     try:
-        return console.input(f"[{mode_color} bold]{mode_char}>[/] ")
+        return console.input(f"[{mc} bold]{ch}>[/] ")
     except (EOFError, KeyboardInterrupt):
         return "/quit"
 
@@ -330,7 +330,7 @@ def main():
                 else:
                     out = result.get("stdout", "")
                     for ln in out.split("\n")[:10]:
-                        console.print(f"  {_t('muted')}{ln}[/]")
+                        console.print(f"  [#565f89]{ln}[/]")
                 messages.append({"role": "tool", "tool_call_id": str(uuid.uuid4())[:8], "content": json.dumps(result)})
             continue
 
@@ -426,7 +426,7 @@ def _tools(tool_calls: list[dict], messages: list[dict], provider: str, model: s
         # Show tool call
         args_s = ", ".join(f"{k}={repr(v)[:40]}" for k, v in args.items())
         console.print()
-        console.print(f"[{_t('warning')}] >[/] [bold]{name}[/]({_t('muted')}{args_s}[/])")
+        console.print(f"[{_t('accent')}] >[/] [bold]{name}[/][#565f89]({args_s})[/]")
 
         # Execute
         result = execute_tool(name, args)
@@ -437,7 +437,7 @@ def _tools(tool_calls: list[dict], messages: list[dict], provider: str, model: s
         else:
             r = _fmt_result(name, result)
             for line in r.split("\n")[:6]:
-                console.print(f"  {_t('muted')}{line}[/]")
+                console.print(f"  [#565f89]{line}[/]")
 
         # Format for LLM
         result_text = _fmt_result(name, result)
@@ -490,12 +490,12 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
             ("/quit", "Exit"),
         ]
         for c, d in cmds:
-            console.print(f"  {_t('accent')}{c:22s}[/] {_t('muted')}{d}[/]")
+            console.print(f"  [#7aa2f7]{c:22s}[/] [#565f89]{d}[/]")
         console.print()
         console.print(f"[bold {_t('accent')}]Keyboard[/]")
-        console.print(f"  {_t('cyan')}Tab[/]         Switch Plan/Build mode")
-        console.print(f"  {_t('cyan')}![/]<command>  Run bash directly")
-        console.print(f"  {_t('cyan')}Ctrl+C[/]      Interrupt")
+        console.print(f"  [#7dcfff]Tab[/]         Switch Plan/Build mode")
+        console.print(f"  [#7dcfff]![/]<command>  Run bash directly")
+        console.print(f"  [#7dcfff]Ctrl+C[/]      Interrupt")
         console.print()
 
     elif cmd == "/clear":
@@ -509,8 +509,8 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
             set_config_value("model", model)
             console.print(f"[{_t('success')}]Model: {model}[/]")
         else:
-            console.print(f"{_t('muted')}Current: {model}[/]")
-            console.print(f"{_t('muted')}Usage: /model <name>[/]")
+            console.print(f"[#565f89]Current: {model}[/]")
+            console.print("[#565f89]Usage: /model <name>[/]")
 
     elif cmd == "/provider":
         if arg:
@@ -518,7 +518,7 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
             set_config_value("provider", provider)
             console.print(f"[{_t('success')}]Provider: {provider}[/]")
         else:
-            console.print(f"{_t('muted')}Current: {provider}[/]")
+            console.print(f"[#565f89]Current: {provider}[/]")
 
     elif cmd == "/theme":
         if arg:
@@ -528,12 +528,12 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
                 console.print(f"[{_t('success')}]Theme: {theme}[/]")
             else:
                 console.print(f"[{_t('error')}]Unknown theme: {theme}[/]")
-                console.print(f"{_t('muted')}Available: {', '.join(THEMES.keys())}[/]")
+                console.print(f"[#565f89]Available: {', '.join(THEMES.keys())}[/]")
         else:
             cfg2 = get_config()
             current = cfg2.get("theme", "tokyo-night")
-            console.print(f"{_t('muted')}Current: {current}[/]")
-            console.print(f"{_t('muted')}Available: {', '.join(THEMES.keys())}[/]")
+            console.print(f"[#565f89]Current: {current}[/]")
+            console.print(f"[#565f89]Available: {', '.join(THEMES.keys())}[/]")
 
     elif cmd == "/status":
         items = get_full_status()
@@ -541,7 +541,7 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
         console.print(f"[bold {_t('accent')}]Status[/]")
         for name, color, detail in items:
             c = _t('success') if color == "green" else _t('error')
-            console.print(f"  [{c}]+[/] {_t('text')}{name}[/] {_t('muted')}{detail}[/]")
+            console.print(f"  [#9ece6a]+[/] [#c0caf5]{name}[/] [#565f89]{detail}[/]")
         console.print()
 
     elif cmd == "/models":
@@ -549,18 +549,18 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
         if models:
             console.print(f"[bold {_t('accent')}]Models ({len(models)})[/]")
             for m in models[:30]:
-                console.print(f"  {_t('text')}{m.get('id','?')}[/]")
+                console.print(f"  [#c0caf5]{m.get('id','?')}[/]")
         else:
-            console.print(f"{_t('muted')}No models. Is gateway running?[/]")
+            console.print("[#565f89]No models. Is gateway running?[/]")
 
     elif cmd == "/sessions":
         sessions = list_sessions()
         if not sessions:
-            console.print(f"{_t('muted')}No sessions.[/]")
+            console.print("[#565f89]No sessions.[/]")
             return
         console.print(f"[bold {_t('accent')}]Sessions ({len(sessions)})[/]")
         for s in sessions[:10]:
-            console.print(f"  {_t('accent')}{s['id']}[/]  {_t('muted')}{s.get('updated_at','')[:16]}  {s.get('count',0)} msgs[/]")
+            console.print(f"  [#7aa2f7]{s['id']}[/]  [#565f89]{s.get('updated_at','')[:16]}  {s.get('count',0)} msgs[/]")
 
     elif cmd == "/save":
         save_session(session_id, messages, {"provider": provider, "model": model})
@@ -568,7 +568,7 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
 
     elif cmd == "/load":
         if not arg:
-            console.print(f"{_t('muted')}Usage: /load <session-id>[/]")
+            console.print("[#565f89]Usage: /load <session-id>[/]")
             return
         data = load_session(arg.strip())
         if data:
@@ -584,13 +584,13 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
         for k, v in cfg2.items():
             if "key" in k.lower():
                 v = f"***{str(v)[-4:]}" if len(str(v)) > 4 else "***"
-            console.print(f"  {_t('text')}{k}[/] = {_t('muted')}{v}[/]")
+            console.print(f"  [#c0caf5]{k}[/] = [#565f89]{v}[/]")
 
     elif cmd == "/undo":
         if tracker.undo():
             console.print(f"[{_t('success')}]Undone.[/]")
         else:
-            console.print(f"{_t('muted')}Nothing to undo.[/]")
+            console.print("[#565f89]Nothing to undo.[/]")
 
     elif cmd == "/undoall":
         count = tracker.undo_all()
@@ -599,17 +599,17 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
     elif cmd == "/diff":
         changes = tracker.list_changes()
         if not changes:
-            console.print(f"{_t('muted')}No changes tracked.[/]")
+            console.print("[#565f89]No changes tracked.[/]")
         else:
             console.print(f"[bold {_t('accent')}]Changes ({len(changes)})[/]")
             for c in changes:
-                console.print(f"  {_t('text')}{c['path']}[/]  {_t('muted')}({c['id']})[/]")
+                console.print(f"  [#c0caf5]{c['path']}[/]  [#565f89]({c['id']})[/]")
 
     elif cmd == "/cost":
         # Approximate token count from messages
         total_chars = sum(len(m.get("content", "") or "") for m in messages)
         approx_tokens = total_chars // 4
-        console.print(f"[{_t('accent')}]~{approx_tokens:,} tokens[/]  {_t('muted')}{len(messages)} messages[/]")
+        console.print(f"[{_t('accent')}]~{approx_tokens:,} tokens[/]  [#565f89]{len(messages)} messages[/]")
 
     elif cmd == "/export":
         fmt = arg.strip().lower() if arg else "markdown"
@@ -636,7 +636,7 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
             messages.extend(recent)
             console.print(f"[{_t('success')}]Compacted: {len(messages)} messages remaining[/]")
         else:
-            console.print(f"{_t('muted')}Nothing to compact.[/]")
+            console.print("[#565f89]Nothing to compact.[/]")
 
     elif cmd == "/init":
         console.print(f"[{_t('accent')}]Generating AGENTS.md...[/]")
@@ -659,7 +659,7 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
             console.print(f"[{_t('accent')}]Blender[/] {scene.get('name','?')}  {scene.get('object_count',0)} objects")
 
     elif cmd == "/mcp":
-        console.print(f"{_t('muted')}MCP management coming soon.[/]")
+        console.print("[#565f89]MCP management coming soon.[/]")
 
     # Custom commands
     elif cmd.lstrip("/") in custom_commands:
@@ -672,7 +672,7 @@ def _cmd(text: str, messages: list[dict], provider: str, model: str, session_id:
         _llm(provider, model, messages, mode, permissions, tracker)
 
     else:
-        console.print(f"[{_t('error')}]Unknown: {cmd}[/]  {_t('muted')}/help[/]")
+        console.print(f"[{_t('error')}]Unknown: {cmd}[/]  [#565f89]/help[/]")
 
     return None
 
