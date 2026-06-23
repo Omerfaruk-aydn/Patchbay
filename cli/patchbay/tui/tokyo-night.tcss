@@ -3,7 +3,7 @@ $secondary: #bb9af7;
 $accent: #7dcfff;
 $success: #9ece6a;
 $warning: #e0af68;
-$error: #f7768e;
+#error: #f7768e;
 $background: #1a1b26;
 $background-light: #1f2335;
 $background-lighter: #24283b;
@@ -15,15 +15,11 @@ $text-dim: #3b4261;
 $border: #3b4261;
 $border-subtle: #2f3549;
 $border-focus: #7aa2f7;
-$scrollbar-background: transparent;
-$scrollbar-color: #3b4261;
-$scrollbar-color-hover: #565f89;
 
 Screen {
     background: $background;
 }
 
-/* ── Status Bar ── */
 #status-bar {
     dock: bottom;
     height: 1;
@@ -33,23 +29,12 @@ Screen {
     layer: above;
 }
 
-#status-bar .status-left {
-    width: 1fr;
-}
-
-#status-bar .status-right {
-    width: auto;
-    content-align: right middle;
-}
-
-/* ── Chat Container ── */
 #chat-container {
     height: 1fr;
     overflow-y: auto;
     padding: 0 1;
 }
 
-/* ── Input Area ── */
 #input-area {
     dock: bottom;
     height: auto;
@@ -70,30 +55,6 @@ Screen {
     border: tall $border-focus;
 }
 
-/* ── Messages ── */
-.message {
-    padding: 0 0;
-    margin: 0 0;
-    height: auto;
-}
-
-.message-user {
-    color: $primary;
-}
-
-.message-assistant {
-    color: $text;
-}
-
-.message-system {
-    color: $text-muted;
-    text-style: italic;
-}
-
-.message-tool {
-    color: $warning;
-}
-
 .message-label {
     text-style: bold;
     width: auto;
@@ -106,7 +67,6 @@ Screen {
     text-wrap: wrap;
 }
 
-/* ── Tool Call Display ── */
 .tool-call {
     padding: 0 1;
     margin: 0 0 0 2;
@@ -127,102 +87,6 @@ Screen {
     border-left: tall $error;
 }
 
-/* ── Dialogs (centered overlays) ── */
-.dialog-overlay {
-    layer: modal;
-    align: center middle;
-}
-
-.dialog {
-    width: 60%;
-    max-width: 80;
-    max-height: 80%;
-    background: $background-light;
-    border: thick $border-focus;
-    padding: 1 2;
-    margin: 1 2;
-}
-
-.dialog-title {
-    text-style: bold;
-    color: $primary;
-    width: 100%;
-    content-align: center middle;
-    height: 1;
-    margin-bottom: 1;
-}
-
-.dialog-list {
-    height: 1fr;
-    overflow-y: auto;
-}
-
-.dialog-item {
-    padding: 0 1;
-    height: auto;
-    color: $text;
-}
-
-.dialog-item-highlight {
-    background: $surface;
-    color: $primary;
-}
-
-.dialog-item-dim {
-    color: $text-muted;
-}
-
-.dialog-footer {
-    height: 1;
-    color: $text-muted;
-    width: 100%;
-    content-align: center middle;
-    margin-top: 1;
-    border-top: solid $border-subtle;
-    padding-top: 0;
-}
-
-/* ── Help Dialog ── */
-.help-content {
-    height: auto;
-    overflow-y: auto;
-}
-
-.help-section {
-    margin-bottom: 1;
-}
-
-.help-key {
-    color: $accent;
-    text-style: bold;
-}
-
-.help-desc {
-    color: $text-muted;
-}
-
-/* ── Model/Session Picker ── */
-.picker-item {
-    padding: 0 1;
-    height: 1;
-}
-
-.picker-item-selected {
-    background: $primary 15%;
-    color: $primary;
-}
-
-.picker-item-name {
-    color: $text;
-    width: 1fr;
-}
-
-.picker-item-detail {
-    color: $text-muted;
-    width: auto;
-}
-
-/* ── Streaming indicator ── */
 #streaming-indicator {
     dock: bottom;
     height: 1;
@@ -231,114 +95,4 @@ Screen {
     padding: 0 1;
     layer: above;
     display: none;
-}
-
-#streaming-indicator.visible {
-    display: block;
-}
-
-/* ── Permission Dialog ── */
-.permission-dialog {
-    width: 50%;
-    max-width: 60;
-    background: $background-light;
-    border: thick $warning;
-    padding: 1 2;
-}
-
-.permission-actions {
-    height: 3;
-    content-align: center middle;
-}
-
-.permission-btn {
-    margin: 0 1;
-    min-width: 12;
-}
-
-/* ── Quit Dialog ── */
-.quit-dialog {
-    width: 40%;
-    max-width: 50;
-    background: $background-light;
-    border: thick $error;
-    padding: 1 2;
-    content-align: center middle;
-}
-
-/* ── Command Palette ── */
-#command-palette {
-    width: 50%;
-    max-width: 60;
-    max-height: 70%;
-    background: $background-light;
-    border: thick $border-focus;
-    padding: 1 0;
-}
-
-#command-palette Input {
-    background: $surface;
-    color: $text;
-    border: none;
-    padding: 0 2;
-    margin: 0 0 1 0;
-}
-
-#command-list {
-    height: 1fr;
-    overflow-y: auto;
-}
-
-/* ── Empty State ── */
-.empty-state {
-    width: 100%;
-    height: 100%;
-    content-align: center middle;
-    color: $text-muted;
-}
-
-.empty-state-title {
-    text-style: bold;
-    color: $primary;
-    margin-bottom: 1;
-}
-
-/* ── Tabs ── */
-.tab-bar {
-    height: 1;
-    background: $background-light;
-}
-
-.tab-active {
-    color: $primary;
-    text-style: bold;
-}
-
-.tab-inactive {
-    color: $text-muted;
-}
-
-/* ── Log Screen ── */
-#log-container {
-    height: 1fr;
-    overflow-y: auto;
-    padding: 0 1;
-    background: $background;
-}
-
-.log-entry {
-    height: auto;
-    color: $text-muted;
-}
-
-.log-error {
-    color: $error;
-}
-
-.log-warn {
-    color: $warning;
-}
-
-.log-info {
-    color: $text-muted;
 }
