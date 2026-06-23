@@ -1,30 +1,29 @@
 $primary: #7aa2f7;
 $secondary: #bb9af7;
 $accent: #7dcfff;
-$success: #9ece6a;
-$warning: #e0af68;
-#error: #f7768e;
-$background: #1a1b26;
-$background-light: #1f2335;
-$background-lighter: #24283b;
+$succ: #9ece6a;
+$warn: #e0af68;
+$err-color: #f7768e;
+$bg: #1a1b26;
+$bg-light: #1f2335;
+$bg-lighter: #24283b;
 $surface: #2a2e42;
 $panel: #24283b;
-$text: #c0caf5;
-$text-muted: #565f89;
-$text-dim: #3b4261;
-$border: #3b4261;
-$border-subtle: #2f3549;
-$border-focus: #7aa2f7;
+$txt: #c0caf5;
+$txt-dim: #565f89;
+$bdr: #3b4261;
+$bdr-subtle: #2f3549;
+$bdr-focus: #7aa2f7;
 
 Screen {
-    background: $background;
+    background: $bg;
 }
 
 #status-bar {
     dock: bottom;
     height: 1;
-    background: $background-light;
-    color: $text-muted;
+    background: $bg-light;
+    color: $txt-dim;
     padding: 0 1;
     layer: above;
 }
@@ -40,19 +39,19 @@ Screen {
     height: auto;
     max-height: 40%;
     padding: 0 1;
-    background: $background;
+    background: $bg;
 }
 
 #input-area Input {
     background: $surface;
-    color: $text;
-    border: tall $border;
+    color: $txt;
+    border: tall $bdr;
     padding: 0 1;
     margin: 0;
 }
 
 #input-area Input:focus {
-    border: tall $border-focus;
+    border: tall $bdr-focus;
 }
 
 .message-label {
@@ -70,27 +69,27 @@ Screen {
 .tool-call {
     padding: 0 1;
     margin: 0 0 0 2;
-    background: $background-lighter;
-    border-left: tall $warning;
+    background: $bg-lighter;
+    border-left: tall $warn;
     height: auto;
 }
 
 .tool-result {
     padding: 0 1;
     margin: 0 0 0 2;
-    background: $background-lighter;
-    border-left: tall $success;
+    background: $bg-lighter;
+    border-left: tall $succ;
     height: auto;
 }
 
 .tool-result-error {
-    border-left: tall $error;
+    border-left: tall $err-color;
 }
 
 #streaming-indicator {
     dock: bottom;
     height: 1;
-    background: $background;
+    background: $bg;
     color: $accent;
     padding: 0 1;
     layer: above;
