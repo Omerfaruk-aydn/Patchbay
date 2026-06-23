@@ -1,18 +1,4 @@
-"""Patchbay CLI - Terminal AI Coding Agent.
-
-100 features integrated:
-- prompt_toolkit for advanced input (multi-line, history, keybindings)
-- 20+ tools (file, search, execution, git, web)
-- 7 themes (tokyo-night, dark, dracula, catppuccin, gruvbox, nord, light)
-- Plan/Build mode toggle
-- File change tracking + /undo
-- Permission system
-- Custom commands from markdown files
-- Session export (markdown, JSON)
-- /compact, /cost, /init, /blender
-- Non-interactive mode (-p flag)
-- Streaming with Rich markdown rendering
-"""
+"""Patchbay CLI - Terminal AI Coding Agent with ALL 100 features."""
 
 from __future__ import annotations
 
@@ -26,13 +12,11 @@ from pathlib import Path
 from typing import Any
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.history import InMemoryHistory, FileHistory
+from prompt_toolkit.history import FileHistory
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import WordCompleter
 from rich.console import Console
 from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.text import Text
 
 from patchbay.config import get_config, set_config_value
 from patchbay.providers import StreamAccumulator, fetch_models_cached, stream_completion
@@ -41,16 +25,21 @@ from patchbay.gateway import blender_get_scene, get_full_status, list_models
 from patchbay.tui.themes import get_theme, THEMES, Theme
 from patchbay.tui.tools import (
     TOOL_MAP, TOOL_DEFINITIONS, WRITE_TOOLS, execute_tool,
-    read_file, write_file, edit_file, run_bash, grep_search,
-    glob_search, list_directory, run_tests, run_linter, run_formatter,
+    run_bash, grep_search, glob_search, list_directory,
+    run_tests, run_linter, run_formatter,
     git_status, git_diff, git_log, web_fetch,
 )
 from patchbay.tui.agent import AgentLoop, SYSTEM_PROMPT
+from patchbay.tui.popups import (
+    show_model_picker, show_session_picker, show_command_palette,
+    show_help, show_transcript, show_file_tree, show_markdown_preview,
+)
 
 if sys.platform == "win32":
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 console = Console(force_terminal=True, color_system="truecolor")
+
 
 # ═══════════════════════════════════════════════════════════════
 # FILE CHANGE TRACKER
@@ -109,7 +98,7 @@ class PermissionManager:
 
     def ask(self, tool_name: str, args: dict) -> str:
         args_s = ", ".join(f"{k}={repr(v)[:30]}" for k, v in args.items())
-        console.print(f"  [bold {self.theme.rich_warning}]Permission required:[/] {tool_name}({args_s})")
+        console.print(f"  [bold {self.theme.rich_warning}]Permission:[/] {tool_name}({args_s})")
         try:
             choice = console.input("  [y] Allow  [a] Allow all  [n] Deny: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
@@ -135,8 +124,7 @@ def _load_custom_commands() -> dict[str, dict]:
         if cmd_dir.exists():
             for f in cmd_dir.glob("*.md"):
                 try:
-                    content = f.read_text(encoding="utf-8")
-                    commands[f.stem] = {"name": f.stem, "template": content}
+                    commands[f.stem] = {"name": f.stem, "template": f.read_text(encoding="utf-8")}
                 except Exception:
                     pass
     return commands
@@ -182,32 +170,7 @@ def get_project_context() -> str:
 # SLASH COMMANDS
 # ═══════════════════════════════════════════════════════════════
 
-COMMANDS_HELP = [
-    ("/help", "This help"),
-    ("/clear", "Clear conversation"),
-    ("/model [name]", "Switch model"),
-    ("/provider [name]", "Switch provider"),
-    ("/theme [name]", "Switch theme"),
-    ("/status", "Gateway status"),
-    ("/models", "List models"),
-    ("/sessions", "List sessions"),
-    ("/save", "Save session"),
-    ("/load [id]", "Load session"),
-    ("/config", "Show config"),
-    ("/undo", "Undo last file change"),
-    ("/undoall", "Undo all file changes"),
-    ("/diff", "List file changes"),
-    ("/cost", "Show session cost"),
-    ("/export [md|json]", "Export session"),
-    ("/compact", "Summarize context"),
-    ("/init", "Generate AGENTS.md"),
-    ("/blender", "Blender scene info"),
-    ("/quit", "Exit"),
-]
-
-
 def _handle_cmd(text: str, state: dict) -> str | None:
-    """Handle slash commands. Returns 'quit' to exit, 'mode:build'/'mode:plan' to switch mode."""
     parts = text.strip().split(maxsplit=1)
     cmd = parts[0].lower()
     arg = parts[1] if len(parts) > 1 else ""
@@ -217,21 +180,7 @@ def _handle_cmd(text: str, state: dict) -> str | None:
         return "quit"
 
     elif cmd in ("/help", "/h", "/?"):
-        console.print()
-        console.print(f"[bold {t.rich_accent}]Commands[/]")
-        for c, d in COMMANDS_HELP:
-            console.print(f"  [{t.rich_accent}]{c:22s}[/] [{t.rich_muted}]{d}[/]")
-        console.print()
-        console.print(f"[bold {t.rich_accent}]Keyboard[/]")
-        console.print(f"  [{t.rich_cyan}]Tab[/]         Switch Plan/Build mode")
-        console.print(f"  [{t.rich_cyan}]![/]<cmd>      Run bash directly")
-        console.print(f"  [{t.rich_cyan}]Ctrl+D[/]      Quick exit")
-        console.print(f"  [{t.rich_cyan}]Ctrl+L[/]      Clear screen")
-        console.print(f"  [{t.rich_cyan}]Ctrl+R[/]      Search history")
-        console.print(f"  [{t.rich_cyan}]Ctrl+E[/]      Open in $EDITOR")
-        console.print(f"  [{t.rich_cyan}]Shift+Enter[/] Multi-line input")
-        console.print(f"  [{t.rich_cyan}]@file[/]       Add file to context")
-        console.print()
+        show_help(t)
 
     elif cmd == "/clear":
         state["messages"].clear()
@@ -244,7 +193,11 @@ def _handle_cmd(text: str, state: dict) -> str | None:
             set_config_value("model", state["model"])
             console.print(f"[{t.rich_success}]Model: {state['model']}[/]")
         else:
-            console.print(f"[{t.rich_muted}]Current: {state['model']}[/]  Usage: /model <name>[/]")
+            result = show_model_picker(state["provider"], state["model"], t)
+            if result:
+                state["model"] = result
+                set_config_value("model", result)
+                console.print(f"[{t.rich_success}]Model: {result}[/]")
 
     elif cmd == "/provider":
         if arg:
@@ -262,16 +215,13 @@ def _handle_cmd(text: str, state: dict) -> str | None:
                 state["theme"] = get_theme(theme_name)
                 console.print(f"[{t.rich_success}]Theme: {theme_name}[/]")
             else:
-                console.print(f"[{t.rich_error}]Unknown theme: {theme_name}[/]")
-                console.print(f"[{t.rich_muted}]Available: {', '.join(THEMES.keys())}[/]")
+                console.print(f"[{t.rich_error}]Unknown: {theme_name}[/]  [{t.rich_muted}]{', '.join(THEMES.keys())}[/]")
         else:
-            console.print(f"[{t.rich_muted}]Current: {state['theme'].name}[/]")
-            console.print(f"[{t.rich_muted}]Available: {', '.join(THEMES.keys())}[/]")
+            console.print(f"[{t.rich_muted}]Current: {state['theme'].name}  Available: {', '.join(THEMES.keys())}[/]")
 
     elif cmd == "/status":
         items = get_full_status()
-        console.print()
-        console.print(f"[bold {t.rich_accent}]Status[/]")
+        console.print(f"\n[bold {t.rich_accent}]Status[/]")
         for name, color, detail in items:
             c = t.rich_success if color == "green" else t.rich_error
             console.print(f"  [{c}]+[/] [{t.rich_text}]{name}[/] [{t.rich_muted}]{detail}[/]")
@@ -300,16 +250,28 @@ def _handle_cmd(text: str, state: dict) -> str | None:
         console.print(f"[{t.rich_success}]Saved: {state['session_id']}[/]")
 
     elif cmd == "/load":
-        if not arg:
-            console.print(f"[{t.rich_muted}]Usage: /load <session-id>[/]")
-            return None
-        data = load_session(arg.strip())
-        if data:
-            state["messages"].clear()
-            state["messages"].extend(data.get("messages", []))
-            console.print(f"[{t.rich_success}]Loaded: {arg.strip()} ({len(state['messages'])} messages)[/]")
+        if arg:
+            data = load_session(arg.strip())
+            if data:
+                state["messages"].clear()
+                state["messages"].extend(data.get("messages", []))
+                console.print(f"[{t.rich_success}]Loaded: {arg.strip()}[/]")
+            else:
+                console.print(f"[{t.rich_error}]Not found: {arg}[/]")
         else:
-            console.print(f"[{t.rich_error}]Session not found: {arg}[/]")
+            result = show_session_picker(state["session_id"], t)
+            if result == "__new__":
+                state["session_id"] = str(uuid.uuid4())[:8]
+                state["messages"].clear()
+                state["messages"].append({"role": "system", "content": SYSTEM_PROMPT + "\n\n" + get_project_context()})
+                console.print(f"[{t.rich_success}]New session: {state['session_id']}[/]")
+            elif result:
+                data = load_session(result)
+                if data:
+                    state["session_id"] = result
+                    state["messages"].clear()
+                    state["messages"].extend(data.get("messages", []))
+                    console.print(f"[{t.rich_success}]Loaded: {result}[/]")
 
     elif cmd == "/config":
         cfg = get_config()
@@ -339,9 +301,12 @@ def _handle_cmd(text: str, state: dict) -> str | None:
                 console.print(f"  [{t.rich_text}]{c['path']}[/]  [{t.rich_muted}]({c['id']})[/]")
 
     elif cmd == "/cost":
-        total_chars = sum(len(m.get("content", "") or "") for m in state["messages"])
-        approx_tokens = total_chars // 4
-        console.print(f"[{t.rich_accent}]~{approx_tokens:,} tokens[/]  [{t.rich_muted}]{len(state['messages'])} messages[/]")
+        agent = state.get("agent")
+        if agent:
+            console.print(f"[{t.rich_accent}]{agent.token_budget.display()}[/]  [{t.rich_muted}]{len(state['messages'])} messages[/]")
+        else:
+            total_chars = sum(len(m.get("content", "") or "") for m in state["messages"])
+            console.print(f"[{t.rich_accent}]~{total_chars // 4:,} tokens[/]  [{t.rich_muted}]{len(state['messages'])} messages[/]")
 
     elif cmd == "/export":
         fmt = arg.strip().lower() if arg else "markdown"
@@ -360,9 +325,9 @@ def _handle_cmd(text: str, state: dict) -> str | None:
             recent = state["messages"][-4:]
             state["messages"].clear()
             state["messages"].extend(summary)
-            state["messages"].append({"role": "system", "content": f"[Context compacted. {len(recent)} recent messages kept.]"})
+            state["messages"].append({"role": "system", "content": f"[Compacted. {len(recent)} recent kept.]"})
             state["messages"].extend(recent)
-            console.print(f"[{t.rich_success}]Compacted: {len(state['messages'])} messages[/]")
+            console.print(f"[{t.rich_success}]Done: {len(state['messages'])} messages[/]")
         else:
             console.print(f"[{t.rich_muted}]Nothing to compact.[/]")
 
@@ -385,14 +350,21 @@ def _handle_cmd(text: str, state: dict) -> str | None:
         else:
             console.print(f"[{t.rich_accent}]Blender[/] {scene.get('name','?')}  {scene.get('object_count',0)} objects")
 
-    # Custom commands
+    elif cmd == "/memory":
+        agent = state.get("agent")
+        if agent and agent.memory.facts:
+            console.print(f"[bold {t.rich_accent}]Memory ({len(agent.memory.facts)} facts)[/]")
+            for f in agent.memory.facts[-10:]:
+                console.print(f"  [{t.rich_muted}][{f['category']}][/] {f['fact']}")
+        else:
+            console.print(f"[{t.rich_muted}]No memories yet.[/]")
+
     elif cmd.lstrip("/") in state.get("custom_commands", {}):
         cmd_name = cmd.lstrip("/")
         tpl = state["custom_commands"][cmd_name]["template"]
         if arg:
             tpl = tpl.replace("{{arg}}", arg)
         state["messages"].append({"role": "user", "content": tpl})
-        console.print(f"[{t.rich_accent}]Running: {cmd_name}[/]")
         return "llm"
 
     else:
@@ -421,41 +393,35 @@ def main():
     agent = AgentLoop(console, theme)
     custom_commands = _load_custom_commands()
 
-    # State dict for commands
     state = {
         "provider": provider, "model": model, "session_id": session_id,
         "messages": messages, "tracker": tracker, "theme": theme,
-        "custom_commands": custom_commands,
+        "custom_commands": custom_commands, "agent": agent,
     }
 
-    # Setup prompt_toolkit
+    # Prompt toolkit setup
     history = FileHistory(str(Path.home() / ".patchbay" / "history"))
     completer = WordCompleter(
         ["/help", "/clear", "/model", "/provider", "/theme", "/status", "/models",
          "/sessions", "/save", "/load", "/config", "/undo", "/undoall", "/diff",
-         "/cost", "/export", "/compact", "/init", "/blender", "/quit"],
+         "/cost", "/export", "/compact", "/init", "/blender", "/memory", "/quit"],
         ignore_case=True,
     )
-    session = PromptSession(
-        history=history,
-        auto_suggest=AutoSuggestFromHistory(),
-        completer=completer,
-        multiline=False,
-    )
+    session = PromptSession(history=history, auto_suggest=AutoSuggestFromHistory(), completer=completer)
 
     # Welcome
     console.print()
     console.print(f"[bold {theme.rich_accent}]Patchbay[/]  [{theme.rich_muted}]|[/]  {provider}  [{theme.rich_muted}]|[/]  {model}  [{theme.rich_muted}]|[/]  {session_id}")
-    console.print(f"[{theme.rich_muted}]Tab: switch mode  /: commands  !: bash  Ctrl+D: exit[/]")
+    console.print(f"[{theme.rich_muted}]Tab: mode  /: commands  !: bash  @file  Ctrl+P: model  Ctrl+S: session  Ctrl+K: commands  Ctrl+H: help  Ctrl+T: transcript  Ctrl+N: new  Ctrl+B: tree  Ctrl+M: markdown  Ctrl+D: exit[/]")
     console.print()
 
     def _on_tool_call(name: str, args: dict) -> str:
         return permissions.ask(name, args)
 
     while True:
-        mode_label = "B" if mode == "build" else "P"
+        ml = "B" if mode == "build" else "P"
         mc = theme.rich_success if mode == "build" else theme.rich_cyan
-        prompt = f"[{mc} bold]{mode_label}>[/] "
+        prompt = f"[{mc} bold]{ml}>[/] "
 
         try:
             line = session.prompt(prompt)
@@ -469,11 +435,10 @@ def main():
         # Tab = toggle mode
         if line.strip() == "\t":
             mode = "build" if mode == "plan" else "plan"
-            ml = "BUILD" if mode == "build" else "PLAN"
-            console.print(f"  [{theme.rich_accent}]Switched to {ml} mode[/]")
+            console.print(f"  [{theme.rich_accent}]Switched to {'BUILD' if mode == 'build' else 'PLAN'} mode[/]")
             continue
 
-        # !prefix = direct bash
+        # !bash
         if line.strip().startswith("!"):
             cmd_str = line.strip()[1:].strip()
             if cmd_str:
@@ -482,12 +447,11 @@ def main():
                 if result.get("error"):
                     console.print(f"  [{theme.rich_error}]Error: {result['error'][:150]}[/]")
                 else:
-                    out = result.get("stdout", "")
-                    for ln in out.split("\n")[:10]:
+                    for ln in result.get("stdout", "").split("\n")[:10]:
                         console.print(f"  [{theme.rich_muted}]{ln}[/]")
             continue
 
-        # @filename = add to context
+        # @file
         if line.strip().startswith("@"):
             filepath = line.strip()[1:].strip()
             if filepath:
@@ -496,11 +460,11 @@ def main():
                     try:
                         content = p.read_text(encoding="utf-8", errors="replace")[:8000]
                         messages.append({"role": "user", "content": f"File: {filepath}\n\n{content}"})
-                        console.print(f"[{theme.rich_success}]Added {filepath} to context ({len(content)} chars)[/]")
+                        console.print(f"[{theme.rich_success}]Added {filepath} ({len(content)} chars)[/]")
                     except Exception as e:
-                        console.print(f"[{theme.rich_error}]Error reading {filepath}: {e}[/]")
+                        console.print(f"[{theme.rich_error}]{e}[/]")
                 else:
-                    console.print(f"[{theme.rich_error}]File not found: {filepath}[/]")
+                    console.print(f"[{theme.rich_error}]Not found: {filepath}[/]")
             continue
 
         # Slash commands
