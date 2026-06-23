@@ -172,6 +172,10 @@ async def mcp_tools_call(request: Request) -> JSONResponse:
     if not command:
         return JSONResponse({"error": f"Unknown tool: {tool_name}"}, status_code=400)
 
+    # For execute_code, pass code directly as keyword arg
+    if tool_name == "execute_code":
+        command = {"type": "execute_code", "code": arguments.get("code", "")}
+
     result = await blender_conn.execute(command)
 
     content = []
